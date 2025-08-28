@@ -1,12 +1,119 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>腿三傻逼！</title>
 <style>
-  /* ... styles are omitted for brevity ... */
+  * {box-sizing: border-box; margin: 0; padding: 0;}
+  html,body { height: 100%; width: 100%; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans CJK SC", "PingFang SC", "Hiragino Sans GB", "Microsoft Yahei", "WenQuanYi Micro Hei", sans-serif;
+    background-image: url("https://s2.loli.net/2025/08/28/9VAWwyedDJimp6t.jpg");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    position: relative;
+    color: #fff;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(rgba(0,0,0,0.12), rgba(0,0,0,0.22));
+    pointer-events: none;
+  }
+
+  .container {
+    position: relative;
+    z-index: 2;
+    text-align: center;
+    padding: 5vh 5vw;
+    width: min(1000px, 94%);
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-weight: 900;
+    letter-spacing: 0.02em;
+    font-size: clamp(28px, 8vw, 72px);
+    margin-bottom: 0.6rem;
+    color: #ffef3a;
+    text-shadow: 0 6px 18px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.03);
+  }
+
+  p.subtitle {
+    font-size: clamp(12px, 3.6vw, 20px);
+    color: rgba(255,255,255,0.95);
+    max-width: 900px;
+    margin: 0 auto;
+    line-height: 1.4;
+    text-shadow: 0 3px 10px rgba(0,0,0,0.45);
+  }
+
+  .hint {
+    margin-top: 1.2rem;
+    font-size: 12px;
+    color: rgba(255,255,255,0.9);
+    opacity: 0.9;
+  }
+
+  /* 弹幕样式 */
+  .barrage {
+    position: absolute;
+    z-index: 9999;
+    font-weight: 700;
+    user-select: none;
+    pointer-events: none;
+    white-space: nowrap;
+    will-change: transform, opacity;
+    font-size: 18px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: rgba(0,0,0,0.45);
+    color: #fff;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+  }
+
+  /* 计数器 */
+  .counter {
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    background: rgba(0,0,0,0.55);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #ffef3a;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    z-index: 10000;
+  }
+
+  @media (max-width: 480px) {
+    .barrage { font-size: 16px; padding: 2px 6px; }
+    .hint { font-size: 11px; }
+    .counter { font-size: 12px; padding: 4px 10px; }
+  }
 </style>
 </head>
 <body>
-  <script>
+  <div class="overlay" aria-hidden="true"></div>
+
+  <div class="container" role="main" aria-live="polite">
+    <h1>腿三傻逼！</h1>
+    <p class="subtitle">我们都有一个共同的朋友，他叫腿三，很不幸，也很幸运地，他是个傻逼。</p>
+    <div class="hint">👏点击屏幕为腿三喝彩👏</div>
+  </div>
+
+  <div class="counter" id="counter">总傻逼 +0</div>
+
+<script>
 (function(){
   // --- 配置 ---
   const API_ENDPOINT = '/api/counter';
@@ -35,7 +142,28 @@
   }
 
   function createBarrage(x, y, text) {
-    // ... function content is omitted for brevity ...
+    const el = document.createElement('span');
+    el.className = 'barrage';
+    el.textContent = text;
+    el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
+    const pad = 8;
+    const w = Math.min(window.innerWidth, document.documentElement.clientWidth);
+    const h = Math.min(window.innerHeight, document.documentElement.clientHeight);
+    el.style.left = Math.max(pad, Math.min(w - pad - 100, x)) + 'px';
+    el.style.top  = Math.max(pad, Math.min(h - pad - 20, y)) + 'px';
+    el.style.transform = 'translateY(0) scale(1)';
+    el.style.opacity = '1';
+    document.body.appendChild(el);
+    requestAnimationFrame(() => {
+      const up = 60 + Math.random()*80;
+      const dx = (Math.random() - 0.5) * 120;
+      el.style.transition = 'transform 1200ms cubic-bezier(.22,.9,.35,1), opacity 1200ms ease-in';
+      el.style.transform = `translate(${dx}px, -${up}px) scale(1.08)`;
+      el.style.opacity = '0';
+    });
+    setTimeout(()=> {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }, 1400);
   }
 
   // --- 网络逻辑：GET ---
@@ -45,9 +173,9 @@
       if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
       const data = await response.json();
       if (data && typeof data.total === 'number') {
-        // --- THIS IS THE FIX ---
-        // Only update the total from a GET request if there are no pending local clicks.
-        // This prevents a stale fetch response from overwriting an optimistic local update.
+        // --- THE FIX IS HERE ---
+        // 只有在本地没有待同步的点击时，才用服务器的GET请求结果更新总数。
+        // 这可以防止一个“过时”的fetch请求覆盖掉本地已经乐观更新的UI。
         if (localClickBuffer === 0) {
           total = data.total;
           updateCounterDisplay();
@@ -80,15 +208,15 @@
       if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
       const data = await response.json();
       if (data && typeof data.total === 'number') {
-        total = data.total; // Authoritative update from the server
+        total = data.total; // 来自服务器的权威更新
         updateCounterDisplay();
       } else {
         console.warn('Received invalid data from syncLocalClicks:', data);
-        localClickBuffer += clicksToSend; // Re-add clicks to buffer on failed parse
+        localClickBuffer += clicksToSend; // 解析失败时，将点击数重新加回缓冲区
       }
     } catch (error) {
       console.error("Error syncing clicks:", error);
-      localClickBuffer += clicksToSend; // Re-add clicks to buffer on network error
+      localClickBuffer += clicksToSend; // 网络错误时，将点击数重新加回缓冲区
     } finally {
       isSyncing = false;
     }
@@ -96,17 +224,54 @@
   
   // --- 事件处理 ---
   function handlePointer(evt) {
-    // ... function content is omitted for brevity ...
+    const now = Date.now();
+    if (now - lastClickTime < clickThrottleMs) return;
+    lastClickTime = now;
+
+    localClickBuffer++;
+    if(typeof total === 'number' && !isNaN(total)) {
+        total++; // 乐观UI更新
+    }
+    updateCounterDisplay();
+
+    let x, y;
+    if (evt.touches && evt.touches.length) {
+      x = evt.touches[0].clientX; y = evt.touches[0].clientY;
+    } else if (evt.clientX !== undefined) {
+      x = evt.clientX; y = evt.clientY;
+    } else { return; }
+    createBarrage(x, y, '傻逼+1');
   }
 
-  // --- NEW: UNIFIED SYNC/FETCH LOGIC ---
+  // --- 统一的同步/拉取逻辑 ---
+  // 这个函数每秒运行一次，并决定是POST本地点击还是GET最新总数，
+  // 防止两者冲突。
   async function syncOrFetch() {
-    // ... function content is omitted for brevity ...
+    // 如果一个操作已经在进行中，则不执行任何操作。
+    if (isSyncing) {
+      return;
+    }
+    
+    // 如果缓冲区中有点击，则优先发送它们。
+    if (localClickBuffer > 0) {
+      await syncLocalClicks();
+    } 
+    // 如果缓冲区为空（用户空闲），则获取最新计数。
+    else {
+      await fetchTotalCount();
+    }
   }
 
   // --- 初始化 ---
   function initialize() {
-    // ... function content is omitted for brevity ...
+    // 页面加载时获取初始计数。
+    fetchTotalCount();
+    
+    // 使用新的、统一的函数替换旧的两个intervals。
+    setInterval(syncOrFetch, SYNC_INTERVAL_MS);
+    
+    // 为点击/轻触附加事件侦听器。
+    document.addEventListener('pointerdown', handlePointer, {passive: true});
   }
   
   initialize();
