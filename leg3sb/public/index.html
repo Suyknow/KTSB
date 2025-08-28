@@ -83,7 +83,6 @@
     border-radius: 12px;
   }
 
-  /* 问题 4: 区分两种弹幕样式 */
   .barrage.type-click {
     background: rgba(0,0,0,0.45);
     color: #fff;
@@ -92,7 +91,7 @@
   .barrage.type-message {
     background: transparent;
     color: #fff;
-    font-size: 20px; /* 让用户弹幕更显眼一些 */
+    font-size: 20px;
     text-shadow: 0 1px 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.8);
   }
 
@@ -125,7 +124,9 @@
   }
 
   .message-input-area input {
-    flex-grow: 1;
+    /* 问题 2 的CSS修复: 使用更强制的flex属性确保输入框能被正确压缩 */
+    flex: 1 1 0;
+    
     padding: 10px 12px;
     border-radius: 25px;
     border: none;
@@ -134,8 +135,6 @@
     font-size: 16px;
     outline: none;
     transition: background 0.3s ease;
-    /* 问题 5: 修复移动端按钮被挤走的问题 */
-    min-width: 0;
   }
 
   .message-input-area input::placeholder {
@@ -156,7 +155,6 @@
     font-size: 16px;
     cursor: pointer;
     transition: background 0.3s ease;
-    /* 问题 5: 修复移动端按钮被挤走的问题 */
     flex-shrink: 0;
   }
 
@@ -201,12 +199,8 @@
   // --- 配置 ---
   const COUNTER_API_ENDPOINT = '/api/counter';
   const MESSAGES_API_ENDPOINT = '/api/messages';
-
-  // 问题 3: 回溯时间从30秒改为10分钟 (600秒)
   const BARRAGE_HISTORY_SECONDS = 600;
-  const BARRAGE_REFRESH_INTERVAL_MS = 2000; // 稍微延长轮询间隔，减轻服务器压力
-
-  // ... 其他配置项保持不变 ...
+  const BARRAGE_REFRESH_INTERVAL_MS = 2000;
   const SYNC_INTERVAL_MS = 1000;
   const INACTIVITY_THRESHOLD_MS = 2500;
   const clickThrottleMs = 50; 
@@ -218,34 +212,25 @@
   let isSyncing = false;
   let lastActivityTime = 0;
   let lastMessageTimestamp = 0;
-  // 问题 2: 新增一个临时列表，存放刚发送的消息，用于去重
   const recentlySentMessages = new Set();
 
   const counterEl = document.getElementById('counter');
-  const messageArea = document.getElementById('messageArea'); // 输入区域容器
+  const messageArea = document.getElementById('messageArea');
   const messageInput = document.getElementById('messageInput');
   const sendMessageBtn = document.getElementById('sendMessageBtn');
 
-  // ... UI 和网络函数 ...
+  // --- 函数定义 ---
   
-  // 问题 4: 修改 createBarrage 函数以支持不同样式
-  function createBarrage(text, type = 'click') {
+  function createBarrage(text, type = 'message') {
     const el = document.createElement('span');
-    el.className = `barrage type-${type}`; // 根据类型添加不同的class
+    el.className = `barrage type-${type}`;
     el.textContent = text;
-    
-    // 点击反馈的样式在CSS中定义
-    if (type === 'click') {
-      const bgColors = ['rgba(0,0,0,0.45)', 'rgba(32,140,190,0.9)', 'rgba(255,69,0,0.85)'];
-      el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
-    }
     
     document.body.appendChild(el);
 
-    // 动画逻辑...
     const screenWidth = window.innerWidth;
-    const duration = 8000 + Math.random() * 4000; // 8-12秒的随机速度
-    const top = Math.random() * (window.innerHeight * 0.7); // 在屏幕70%的高度内随机
+    const duration = 8000 + Math.random() * 4000;
+    const top = Math.random() * (window.innerHeight * 0.7);
 
     el.style.top = `${top}px`;
     el.style.transform = `translateX(${screenWidth}px)`;
@@ -262,7 +247,6 @@
     }, duration);
   }
 
-  // 点击出现的“傻逼+1”的专用函数
   function createClickFeedback(x, y) {
       const el = document.createElement('span');
       el.className = 'barrage type-click';
@@ -279,8 +263,8 @@
       requestAnimationFrame(() => {
           const up = 60 + Math.random() * 80;
           el.style.transition = 'transform 1.2s cubic-bezier(.22,.9,.35,1), opacity 1.2s ease-in';
-          el.style.transform = `translate(-50%, -${up}px) scale(1.08)`;
-          el.style.opacity = '0';
+          // 问题 1 的JS修复: 修正transform的计算，确保动画正确
+          el.style.transform = `translate(-50%, calc(-50% - ${up}px)) scale(1.08)`;
       });
 
       setTimeout(() => {
@@ -292,108 +276,8 @@
       const trimmedMessage = message.trim();
       if (!trimmedMessage) return;
 
-      // 问题 2: 发送前，将消息加入去重列表
       recentlySentMessages.add(trimmedMessage);
-      // 同时设置一个定时器，在一段时间后自动从列表中移除，防止列表无限增大
-      setTimeout(() => recentlySentMessages.delete(trimmedMessage), 10000); // 10秒后移除
+      setTimeout(() => recentlySentMessages.delete(trimmedMessage), 10000);
 
-      // 乐观更新，立即在本地显示
       createBarrage(trimmedMessage, 'message');
-      messageInput.value = '';
-      checkMessageInput();
-
-      try {
-          sendMessageBtn.disabled = true;
-          await fetch(MESSAGES_API_ENDPOINT, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ message: trimmedMessage })
-          });
-      } catch (error) {
-          console.error("Error sending message:", error);
-          // 如果发送失败，可以考虑给用户一个提示
-      } finally {
-          // 不需要在这里 re-enable 按钮，checkMessageInput会处理
-      }
-  }
-
-  async function fetchMessages(sinceTimestamp = 0) {
-      try {
-          const response = await fetch(`${MESSAGES_API_ENDPOINT}?since=${sinceTimestamp}`);
-          const data = await response.json();
-
-          if (data && Array.isArray(data.messages)) {
-              data.messages.sort((a, b) => a.timestamp - b.timestamp);
-
-              data.messages.forEach(msg => {
-                  if (msg.timestamp > lastMessageTimestamp) {
-                      // 问题 2: 显示前检查是否是自己刚发送的
-                      if (!recentlySentMessages.has(msg.message)) {
-                          createBarrage(msg.message, 'message');
-                      }
-                      lastMessageTimestamp = msg.timestamp;
-                  }
-              });
-          }
-      } catch (error) {
-          console.error("Error fetching messages:", error);
-      }
-  }
-  
-  // --- 事件处理 ---
-  function handlePointer(evt) {
-    // 问题 1: 如果点击目标在输入区域内，则不触发
-    if (messageArea.contains(evt.target)) {
-        return;
-    }
-
-    const now = Date.now();
-    if (now - lastActivityTime < clickThrottleMs) return;
-    lastActivityTime = now;
-
-    localClickBuffer++;
-    total++;
-    updateCounterDisplay();
-    
-    createClickFeedback(evt.clientX, evt.clientY);
-  }
-
-  function checkMessageInput() {
-      sendMessageBtn.disabled = messageInput.value.trim().length === 0;
-  }
-
-  function handleInputKeydown(event) {
-      if (event.key === 'Enter' && !sendMessageBtn.disabled) {
-          sendMessage(messageInput.value);
-      }
-  }
-
-  // ... 其他函数 (fetchTotalCount, syncLocalClicks, masterSyncLoop) 保持不变 ...
-  async function fetchTotalCount() { try { const response = await fetch(COUNTER_API_ENDPOINT); if (!response.ok) throw new Error(`Network error`); const data = await response.json(); if (data && typeof data.total === 'number') { total = data.total; updateCounterDisplay(); } } catch (error) { console.error("Error fetching total count:", error); } }
-  async function syncLocalClicks() { if (localClickBuffer === 0 || isSyncing) return; isSyncing = true; const clicksToSend = Math.min(localClickBuffer, MAX_CLICKS_PER_SYNC); localClickBuffer = 0; try { const response = await fetch(COUNTER_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ incrementBy: clicksToSend }) }); if (!response.ok) throw new Error(`Network error`); const data = await response.json(); if (data && typeof data.total === 'number') { total = data.total + localClickBuffer; updateCounterDisplay(); } else { localClickBuffer += clicksToSend; } } catch (error) { console.error("Error syncing clicks:", error); localClickBuffer += clicksToSend; } finally { isSyncing = false; } }
-  async function masterSyncLoop() { if (isSyncing) return; const now = Date.now(); const isUserActive = (now - lastActivityTime) < INACTIVITY_THRESHOLD_MS; if (localClickBuffer > 0) { await syncLocalClicks(); } else if (!isUserActive) { await fetchTotalCount(); } }
-
-
-  // --- 初始化 ---
-  function initialize() {
-    fetchTotalCount();
-    setInterval(masterSyncLoop, SYNC_INTERVAL_MS);
-    // 问题 1: 将监听器加在 body 上，而不是 document
-    document.body.addEventListener('pointerdown', handlePointer, {passive: true});
-
-    // --- 弹幕相关初始化 ---
-    lastMessageTimestamp = Date.now() - (BARRAGE_HISTORY_SECONDS * 1000);
-    fetchMessages(lastMessageTimestamp);
-    setInterval(() => fetchMessages(lastMessageTimestamp), BARRAGE_REFRESH_INTERVAL_MS);
-
-    messageInput.addEventListener('input', checkMessageInput);
-    sendMessageBtn.addEventListener('click', () => sendMessage(messageInput.value));
-    messageInput.addEventListener('keydown', handleInputKeydown);
-    checkMessageInput();
-  }
-  
-  initialize();
-})();
-</script>
-</body>
-</html>
+      messageInput.value
