@@ -1,28 +1,35 @@
 import { MongoClient } from 'mongodb';
 
 const uri = process.env.MONGODB_URI;
-// 移除已弃用的选项，让驱动程序使用最新、最稳定的默认设置
-const client = new MongoClient(uri);
+const options = {};
 
-let cachedDb = null;
+let client;
+let clientPromise;
 
-async function connectToDatabase() {
-  if (cachedDb) {
-    return cachedDb;
+if (!process.env.MONGODB_URI) {
+  throw new Error('Please add your Mongo URI to .env.local');
+}
+
+if (process.env.NODE_ENV === 'development') {
+  // 在开发模式下，使用一个全局变量来保存client，这样在热重载时不会重复创建连接
+  if (!global._mongoClientPromise) {
+    client = new MongoClient(uri, options);
+    global._mongoClientPromise = client.connect();
   }
-  
-  // 仅在需要时连接，驱动程序会管理连接池
-  await client.connect();
-  const db = client.db('counter_db');
-  cachedDb = db;
-  return db;
+  clientPromise = global._mongoClientPromise;
+} else {
+  // 在生产模式下，这是最佳实践
+  client = new MongoClient(uri, options);
+  clientPromise = client.connect();
 }
 
 const MAX_INCREMENT_ALLOWED = 20;
 
 export default async function handler(req, res) {
   try {
-    const db = await connectToDatabase();
+    // 等待并复用全局的数据库连接Promise
+    const client = await clientPromise;
+    const db = client.db("counter_db");
     const collection = db.collection('counts');
     const counterId = 'total_shabi_count';
 
@@ -48,20 +55,17 @@ export default async function handler(req, res) {
       );
       
       if (!result) {
-        // 如果数据库操作因某些原因没有返回结果，主动抛出错误
         throw new Error('Database operation failed to return a result.');
       }
       
-      const newTotal = result.value ? result.value.value : validatedIncrement;
+      const newTotal = result.value.value;
       return res.status(200).json({ total: newTotal });
     }
 
-    // 如果方法不是GET或POST，返回405
     return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
 
   } catch (error) {
-    // 这个 catch 会捕获所有错误，包括数据库连接或操作失败
     console.error('[API_HANDLER_ERROR]', error);
-    return res.status(500).json({ error: 'Internal Server Error', details: error.message });
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
