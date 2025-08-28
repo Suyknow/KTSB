@@ -55,10 +55,13 @@ export default async function handler(req, res) {
       );
       
       if (!result) {
-        throw new Error('Database operation failed to return a result.');
+        // findOneAndUpdate with upsert:true should always return a document.
+        // This error is a safeguard for unexpected database behavior.
+        throw new Error('Database operation failed to return the updated document.');
       }
       
-      const newTotal = result.value.value;
+      // 正确的访问方式：result 本身就是更新后的文档
+      const newTotal = result.value; // <--- 修正后的代码
       return res.status(200).json({ total: newTotal });
     }
 
