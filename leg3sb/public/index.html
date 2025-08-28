@@ -111,7 +111,6 @@
     <div class="hint">👏点击屏幕为腿三喝彩👏</div>
   </div>
 
-  <!-- 右上角计数器 -->
   <div class="counter" id="counter">总傻逼 +0</div>
 
 <script>
@@ -119,9 +118,6 @@
   // --- 配置 ---
   const API_ENDPOINT = '/api/counter';
   const SYNC_INTERVAL_MS = 1000; 
-
-  // --- 关键修复：将轮询间隔改为更实时的1秒 ---
-  const FETCH_TOTAL_INTERVAL_MS = 1000;
 
   const clickThrottleMs = 50; 
   const MAX_CLICKS_PER_SYNC = 20;
@@ -170,7 +166,7 @@
     }, 1400);
   }
 
-  // --- 核心网络逻辑 ---
+  // --- 网络逻辑：GET ---
   async function fetchTotalCount() {
     try {
       const response = await fetch(API_ENDPOINT);
@@ -186,7 +182,8 @@
       console.error("Error fetching total count:", error);
     }
   }
-
+  
+  // --- 网络逻辑：POST ---
   async function syncLocalClicks() {
     if (localClickBuffer === 0 || isSyncing) {
       return;
@@ -205,20 +202,20 @@
       if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
       const data = await response.json();
       if (data && typeof data.total === 'number') {
-        total = data.total;
+        total = data.total; // Authoritative update from the server
         updateCounterDisplay();
       } else {
         console.warn('Received invalid data from syncLocalClicks:', data);
-        localClickBuffer += clicksToSend;
+        localClickBuffer += clicksToSend; // Re-add clicks to buffer on failed parse
       }
     } catch (error) {
       console.error("Error syncing clicks:", error);
-      localClickBuffer += clicksToSend;
+      localClickBuffer += clicksToSend; // Re-add clicks to buffer on network error
     } finally {
       isSyncing = false;
     }
   }
-
+  
   // --- 事件处理 ---
   function handlePointer(evt) {
     const now = Date.now();
@@ -227,7 +224,7 @@
 
     localClickBuffer++;
     if(typeof total === 'number' && !isNaN(total)) {
-        total++;
+        total++; // Optimistic UI update
     }
     updateCounterDisplay();
 
@@ -240,11 +237,34 @@
     createBarrage(x, y, '傻逼+1');
   }
 
+  // --- NEW: UNIFIED SYNC/FETCH LOGIC ---
+  // This function runs every second and decides whether to POST local clicks
+  // or GET the latest total, preventing the two from conflicting.
+  async function syncOrFetch() {
+    // If an operation is already in progress, do nothing.
+    if (isSyncing) {
+      return;
+    }
+    
+    // If there are clicks in the buffer, prioritize sending them.
+    if (localClickBuffer > 0) {
+      await syncLocalClicks();
+    } 
+    // If the buffer is empty (user is idle), fetch the latest count.
+    else {
+      await fetchTotalCount();
+    }
+  }
+
   // --- 初始化 ---
   function initialize() {
+    // Get the initial count when the page loads.
     fetchTotalCount();
-    setInterval(syncLocalClicks, SYNC_INTERVAL_MS);
-    setInterval(fetchTotalCount, FETCH_TOTAL_INTERVAL_MS);
+    
+    // ** THE FIX **: Replace the two old intervals with our new, unified function.
+    setInterval(syncOrFetch, SYNC_INTERVAL_MS);
+    
+    // Attach the event listener for clicks/taps.
     document.addEventListener('pointerdown', handlePointer, {passive: true});
   }
   
