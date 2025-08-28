@@ -120,8 +120,8 @@
   const API_ENDPOINT = '/api/counter';
   const SYNC_INTERVAL_MS = 1000; 
 
-  // --- 关键修复：将轮询间隔改回合理的5秒 ---
-  const FETCH_TOTAL_INTERVAL_MS = 5000;
+  // --- 关键修复：将轮询间隔改为更实时的1秒 ---
+  const FETCH_TOTAL_INTERVAL_MS = 1000;
 
   const clickThrottleMs = 50; 
   const MAX_CLICKS_PER_SYNC = 20;
