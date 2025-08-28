@@ -23,40 +23,10 @@
   }
 
   .overlay { position: absolute; inset: 0; background: linear-gradient(rgba(0,0,0,0.12), rgba(0,0,0,0.22)); }
-
-  .container {
-    position: relative;
-    z-index: 2;
-    text-align: center;
-    padding: 5vh 5vw;
-    width: min(1000px, 94%);
-    margin: 0 auto;
-  }
-
-  h1 {
-    font-weight: 900;
-    letter-spacing: 0.02em;
-    font-size: clamp(28px, 8vw, 72px);
-    margin-bottom: 0.6rem;
-    color: #ffef3a;
-    text-shadow: 0 6px 18px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.03);
-  }
-
-  p.subtitle {
-    font-size: clamp(12px, 3.6vw, 20px);
-    color: rgba(255,255,255,0.95);
-    max-width: 900px;
-    margin: 0 auto;
-    line-height: 1.4;
-    text-shadow: 0 3px 10px rgba(0,0,0,0.45);
-  }
-
-  .hint {
-    margin-top: 1.2rem;
-    font-size: 12px;
-    color: rgba(255,255,255,0.9);
-    opacity: 0.9;
-  }
+  .container { position: relative; z-index: 2; text-align: center; padding: 5vh 5vw; width: min(1000px, 94%); margin: 0 auto; }
+  h1 { font-weight: 900; letter-spacing: 0.02em; font-size: clamp(28px, 8vw, 72px); margin-bottom: 0.6rem; color: #ffef3a; text-shadow: 0 6px 18px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.03); }
+  p.subtitle { font-size: clamp(12px, 3.6vw, 20px); color: rgba(255,255,255,0.95); max-width: 900px; margin: 0 auto; line-height: 1.4; text-shadow: 0 3px 10px rgba(0,0,0,0.45); }
+  .hint { margin-top: 1.2rem; font-size: 12px; color: rgba(255,255,255,0.9); opacity: 0.9; }
 
   .barrage {
     position: absolute;
@@ -105,97 +75,81 @@
 
   <div class="counter" id="counter">总傻逼 +0</div>
 
-  <!-- LeanCloud SDK -->
-  <script src="https://unpkg.com/leancloud-storage@4.15.0/dist/av-min.js"></script>
-
 <script>
-(function(){
-  const appId = "JV7lh7XZKr5joA7g0X2LuGR7-gzGzoHsz";
-  const appKey = "oYpUIPHGrcdHz6Ysqwa7uDV1";
-  const serverURL = "https://jv7lh7xzkr5joa7g0x2lugr7-gzgzohsz.cn1.avoscloud.com";
-  const objectId = "68b009202f7ee809fcbaea42";
+const counterEl = document.getElementById('counter');
+const bgColors = [
+  'rgba(0,0,0,0.45)',
+  'rgba(32,140,190,0.9)',
+  'rgba(255,69,0,0.85)',
+  'rgba(70,70,70,0.7)',
+  'rgba(0,128,0,0.7)'
+];
 
-  AV.init({ appId, appKey, serverURL });
+// 替换成你 Google Apps Script Web App 部署后的 URL
+const WEB_APP_URL = 'YOUR_WEB_APP_URL_HERE';
 
-  const counterEl = document.getElementById('counter');
+// 弹幕动画
+function createBarrage(x, y, text) {
+  const el = document.createElement('span');
+  el.className = 'barrage';
+  el.textContent = text;
+  el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
+  const pad = 8;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  el.style.left = Math.max(pad, Math.min(w - pad - 100, x)) + 'px';
+  el.style.top  = Math.max(pad, Math.min(h - pad - 20, y)) + 'px';
+  el.style.transform = 'translateY(0) scale(1)';
+  el.style.opacity = '1';
+  document.body.appendChild(el);
 
-  const bgColors = [
-    'rgba(0,0,0,0.45)',
-    'rgba(32,140,190,0.9)',
-    'rgba(255,69,0,0.85)',
-    'rgba(70,70,70,0.7)',
-    'rgba(0,128,0,0.7)'
-  ];
+  requestAnimationFrame(() => {
+    const up = 60 + Math.random()*80;
+    const dx = (Math.random() - 0.5) * 120;
+    el.style.transition = 'transform 1200ms cubic-bezier(.22,.9,.35,1), opacity 1200ms ease-in';
+    el.style.transform = `translate(${dx}px, -${up}px) scale(1.08)`;
+    el.style.opacity = '0';
+  });
 
-  // 弹幕动画
-  function createBarrage(x, y, text) {
-    const el = document.createElement('span');
-    el.className = 'barrage';
-    el.textContent = text;
-    el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
-    const pad = 8;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    el.style.left = Math.max(pad, Math.min(w - pad - 100, x)) + 'px';
-    el.style.top  = Math.max(pad, Math.min(h - pad - 20, y)) + 'px';
-    el.style.transform = 'translateY(0) scale(1)';
-    el.style.opacity = '1';
-    document.body.appendChild(el);
+  setTimeout(()=> { if(el.parentNode) el.parentNode.removeChild(el); }, 1400);
+}
 
-    requestAnimationFrame(() => {
-      const up = 60 + Math.random()*80;
-      const dx = (Math.random() - 0.5) * 120;
-      el.style.transition = 'transform 1200ms cubic-bezier(.22,.9,.35,1), opacity 1200ms ease-in';
-      el.style.transform = `translate(${dx}px, -${up}px) scale(1.08)`;
-      el.style.opacity = '0';
+// 获取计数
+async function getCounter() {
+  try {
+    const res = await fetch(WEB_APP_URL);
+    const data = await res.json();
+    counterEl.textContent = `总傻逼 +${data.total}`;
+    return data.total;
+  } catch(err) {
+    console.error("读取计数失败", err);
+    return 0;
+  }
+}
+
+// 点击 +1
+async function addOne(x, y) {
+  try {
+    const res = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'}
     });
-
-    setTimeout(()=> { if(el.parentNode) el.parentNode.removeChild(el); }, 1400);
+    const data = await res.json();
+    counterEl.textContent = `总傻逼 +${data.total}`;
+    createBarrage(x, y, '傻逼+1');
+  } catch(err) {
+    console.error("更新计数失败", err);
   }
+}
 
-  // 获取计数
-  async function getCounter() {
-    try {
-      const counter = AV.Object.createWithoutData('Counter', objectId);
-      await counter.fetch();
-      const total = counter.get('total') || 0;
-      counterEl.textContent = `总傻逼 +${total}`;
-      return total;
-    } catch(err) {
-      console.error("读取计数失败", err);
-      return 0;
-    }
-  }
+// 点击事件
+document.addEventListener('pointerdown', evt => {
+  addOne(evt.clientX, evt.clientY);
+}, {passive:true});
 
-  // 点击 +1
-  async function addOne(x, y) {
-    try {
-      const counter = AV.Object.createWithoutData('Counter', objectId);
-      await counter.fetch();
-      let total = counter.get('total') || 0;
-      total++;
-      counter.set('total', total);
-      await counter.save();
-      createBarrage(x, y, '傻逼+1');
-      // 计数器由轮询自动更新，无需手动更新
-    } catch(err) {
-      console.error("更新计数失败", err);
-    }
-  }
-
-  // 点击事件
-  document.addEventListener('pointerdown', evt => {
-    let x = evt.clientX;
-    let y = evt.clientY;
-    addOne(x, y);
-  }, {passive:true});
-
-  // 初始化计数并轮询刷新
-  getCounter();
-  setInterval(getCounter, 1000);  // 每秒刷新一次
-
-})();
+// 初始化计数并轮询刷新
+getCounter();
+setInterval(getCounter, 1000);
 </script>
-
 </body>
 </html>
