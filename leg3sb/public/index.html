@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>腿三傻逼！</title>
 <style>
+  /* 问题 2: 解决页面右侧出现空白区域的问题 */
+  html, body {
+    overflow-x: hidden;
+  }
+  
   * {box-sizing: border-box; margin: 0; padding: 0;}
   html,body { height: 100%; width: 100%; }
 
@@ -21,8 +26,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding-bottom: 70px; /* 为输入区留出空间 */
-    overflow: hidden; /* 防止弹幕溢出导致滚动条 */
+    padding-bottom: 70px;
   }
 
   .overlay {
@@ -124,15 +128,13 @@
   }
 
   .message-input-area input {
-    /* 问题 2 的CSS修复: 使用更强制的flex属性确保输入框能被正确压缩 */
     flex: 1 1 0;
-    
     padding: 10px 12px;
     border-radius: 25px;
     border: none;
     background: rgba(255,255,255,0.15);
     color: #fff;
-    font-size: 16px;
+    font-size: 16px; /* 默认字体大小设为16px */
     outline: none;
     transition: background 0.3s ease;
   }
@@ -152,7 +154,7 @@
     background: #ffef3a;
     color: #333;
     font-weight: bold;
-    font-size: 16px;
+    font-size: 16px; /* 默认字体大小设为16px */
     cursor: pointer;
     transition: background 0.3s ease;
     flex-shrink: 0;
@@ -173,7 +175,11 @@
     .hint { font-size: 11px; }
     .counter { font-size: 12px; padding: 4px 10px; }
     .message-input-area { padding: 8px 10px; gap: 8px; }
-    .message-input-area input, .message-input-area button { font-size: 14px; padding: 8px 15px; }
+    .message-input-area input, .message-input-area button {
+      /* 问题 4: 修复移动端输入框自动放大的问题 */
+      font-size: 16px;
+      padding: 8px 15px;
+    }
     body { padding-bottom: 60px; }
   }
 </style>
@@ -221,6 +227,7 @@
 
   // --- 函数定义 ---
   
+  // 问题 3: 修复弹幕中途消失的问题
   function createBarrage(text, type = 'message') {
     const el = document.createElement('span');
     el.className = `barrage type-${type}`;
@@ -228,16 +235,16 @@
     
     document.body.appendChild(el);
 
-    const screenWidth = window.innerWidth;
-    const duration = 8000 + Math.random() * 4000;
+    const duration = 10000 + Math.random() * 5000; // 10-15秒随机速度
     const top = Math.random() * (window.innerHeight * 0.7);
 
     el.style.top = `${top}px`;
-    el.style.transform = `translateX(${screenWidth}px)`;
+    // 使用 vw 和 % 单位确保完整穿越屏幕
+    el.style.transform = 'translateX(100vw)';
 
     requestAnimationFrame(() => {
         el.style.transition = `transform ${duration}ms linear`;
-        el.style.transform = `translateX(-${el.offsetWidth}px)`;
+        el.style.transform = 'translateX(-100%)';
     });
 
     setTimeout(() => {
@@ -247,6 +254,7 @@
     }, duration);
   }
 
+  // 问题 1: 恢复点击弹幕的效果
   function createClickFeedback(x, y) {
       const el = document.createElement('span');
       el.className = 'barrage type-click';
@@ -254,17 +262,19 @@
       const bgColors = ['rgba(0,0,0,0.45)', 'rgba(32,140,190,0.9)', 'rgba(255,69,0,0.85)'];
       el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
 
+      // 恢复到最初有效的动画逻辑
       el.style.left = `${x}px`;
       el.style.top = `${y}px`;
-      el.style.transform = 'translate(-50%, -50%) scale(1)';
+      el.style.transform = `translate(-50%, -50%)`; // 居中于点击点
       el.style.opacity = '1';
       document.body.appendChild(el);
 
       requestAnimationFrame(() => {
           const up = 60 + Math.random() * 80;
+          const dx = (Math.random() - 0.5) * 120; // 增加一点随机左右偏移
           el.style.transition = 'transform 1.2s cubic-bezier(.22,.9,.35,1), opacity 1.2s ease-in';
-          // 问题 1 的JS修复: 修正transform的计算，确保动画正确
-          el.style.transform = `translate(-50%, calc(-50% - ${up}px)) scale(1.08)`;
+          el.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% - ${up}px)) scale(1.08)`;
+          el.style.opacity = '0';
       });
 
       setTimeout(() => {
