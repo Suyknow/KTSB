@@ -193,7 +193,7 @@
 
   // --- 弹幕模块配置 ---
   const MESSAGES_API_ENDPOINT = '/api/messages';
-  const INITIAL_BARRAGE_COUNT = 200;
+  const INITIAL_BARRAGE_COUNT = 200; // 固定获取200条
   const INITIAL_ANIMATION_DURATION = 10000;
   const BARRAGE_REFRESH_INTERVAL_MS = 2500;
 
@@ -202,7 +202,6 @@
   let localClickBuffer = 0;
   let isSyncing = false;
   let lastClickTime = 0;
-
   let lastMessageTimestamp = 0;
   const recentlySentMessages = new Set();
 
@@ -213,37 +212,24 @@
   const bgColors = ['rgba(0,0,0,0.45)', 'rgba(32,140,190,0.9)', 'rgba(255,69,0,0.85)'];
 
   // --- 弹幕函数 ---
-
   function createFlyingBarrage(text, type = 'realtime') {
     const el = document.createElement('span');
     el.className = `barrage type-${type}`;
     el.textContent = text;
     document.body.appendChild(el);
-
-    // --- 速度参数 ---
-    // 基础时长设为12-17秒
     let duration = 12000 + Math.random() * 5000;
-    
-    // --- 移动端速度优化 ---
-    // 通过判断屏幕宽度，如果是手机（宽度小于768px），则将动画时长减半，速度加倍
     if (window.innerWidth < 768) {
       duration /= 2;
     }
-
     const top = Math.random() * (window.innerHeight * 0.7);
-
     el.style.top = `${top}px`;
     el.style.left = '100vw'; 
     el.style.transform = 'translateX(0)';
-
     requestAnimationFrame(() => {
         el.style.transition = `transform ${duration}ms linear`;
         el.style.transform = `translateX(calc(-100vw - 100%))`;
     });
-
-    setTimeout(() => {
-        if (el.parentNode) el.parentNode.removeChild(el);
-    }, duration);
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, duration);
   }
 
   function createClickBarrage(x, y, text) {
@@ -264,11 +250,10 @@
       el.style.transform = `translate(${dx}px, -${up}px) scale(1.08)`;
       el.style.opacity = '0';
     });
-    setTimeout(()=> {
-      if (el && el.parentNode) el.parentNode.removeChild(el);
-    }, 1400);
+    setTimeout(()=> { if (el && el.parentNode) el.parentNode.removeChild(el); }, 1400);
   }
 
+  // --- 网络与逻辑 ---
   async function runInitialBarrageSequence() {
     try {
       const response = await fetch(`${MESSAGES_API_ENDPOINT}?limit=${INITIAL_BARRAGE_COUNT}`);
@@ -336,7 +321,6 @@
   function handleInputKeydown(event) { if (event.key === 'Enter' && !sendMessageBtn.disabled) sendMessage(messageInput.value); }
 
   // --- 计数器相关函数 ---
-  
   function updateCounterDisplay() {
     if (typeof total === 'number' && !isNaN(total)) {
       counterEl.textContent = `总傻逼 +${Math.round(total)}`;
@@ -381,7 +365,6 @@
     const now = Date.now();
     if (now - lastClickTime < clickThrottleMs) return;
     lastClickTime = now;
-    
     localClickBuffer++;
     total++;
     updateCounterDisplay();
