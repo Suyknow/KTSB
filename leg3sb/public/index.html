@@ -116,26 +116,34 @@
 
 <script>
 (function(){
-  let lastTime = 0;
-  let total = 0;
-  const counterEl = document.getElementById('counter');
+  // --- 配置 ---
+  const API_ENDPOINT = '/api/counter';
+  const SYNC_INTERVAL_MS = 2000;
+  const FETCH_TOTAL_INTERVAL_MS = 5000;
 
+  // --- 状态变量 ---
+  let total = 0;
+  let localClickBuffer = 0;
+  let isSyncing = false;
+  let lastClickTime = 0;
+  const clickThrottleMs = 20;
+
+  const counterEl = document.getElementById('counter');
   const bgColors = [
-    'rgba(0,0,0,0.45)',
-    'rgba(32,140,190,0.9)',
-    'rgba(255,69,0,0.85)',
-    'rgba(70,70,70,0.7)',
-    'rgba(0,128,0,0.7)'
+    'rgba(0,0,0,0.45)', 'rgba(32,140,190,0.9)', 'rgba(255,69,0,0.85)',
+    'rgba(70,70,70,0.7)', 'rgba(0,128,0,0.7)'
   ];
 
-  function updateCounter() {
-    counterEl.textContent = `总傻逼 +${total}`;
+  // --- UI 更新函数 ---
+  function updateCounterDisplay() {
+    // 加一个检查，确保我们只显示数字
+    if (typeof total === 'number' && !isNaN(total)) {
+      counterEl.textContent = `总傻逼 +${Math.round(total)}`;
+    }
   }
 
   function createBarrage(x, y, text) {
-    total++;
-    updateCounter();
-
+    // ... (这部分视觉效果逻辑保持不变) ...
     const el = document.createElement('span');
     el.className = 'barrage';
     el.textContent = text;
@@ -148,7 +156,6 @@
     el.style.transform = 'translateY(0) scale(1)';
     el.style.opacity = '1';
     document.body.appendChild(el);
-
     requestAnimationFrame(() => {
       const up = 60 + Math.random()*80;
       const dx = (Math.random() - 0.5) * 120;
@@ -156,30 +163,104 @@
       el.style.transform = `translate(${dx}px, -${up}px) scale(1.08)`;
       el.style.opacity = '0';
     });
-
     setTimeout(()=> {
       if (el && el.parentNode) el.parentNode.removeChild(el);
     }, 1400);
   }
 
-  function handlePointer(evt) {
-    const now = Date.now();
-    if (now - lastTime < 20) return;
-    lastTime = now;
-    let x, y;
-    if (evt.touches && evt.touches.length) {
-      x = evt.touches[0].clientX;
-      y = evt.touches[0].clientY;
-    } else if (evt.clientX !== undefined) {
-      x = evt.clientX;
-      y = evt.clientY;
-    } else {
+  // --- 核心网络逻辑 ---
+
+  async function fetchTotalCount() {
+    try {
+      const response = await fetch(API_ENDPOINT);
+      if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
+      const data = await response.json();
+
+      // --- 关键修改 START ---
+      // 在赋值前，严格检查收到的数据是否是一个有效的数字
+      if (data && typeof data.total === 'number') {
+        total = data.total;
+        updateCounterDisplay();
+      } else {
+        // 如果数据格式不对，就在控制台打印一个警告，但不会破坏现有计数
+        console.warn('Received invalid data from fetchTotalCount:', data);
+      }
+      // --- 关键修改 END ---
+
+    } catch (error) {
+      console.error("Error fetching total count:", error);
+    }
+  }
+
+  async function syncLocalClicks() {
+    if (localClickBuffer === 0 || isSyncing) {
       return;
     }
+    isSyncing = true;
+    
+    const clicksToSend = localClickBuffer;
+    localClickBuffer = 0;
+
+    try {
+      const response = await fetch(API_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ incrementBy: clicksToSend })
+      });
+      if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
+      const data = await response.json();
+
+      // --- 关键修改 START ---
+      // 同样，在这里也进行严格检查
+      if (data && typeof data.total === 'number') {
+        total = data.total;
+        updateCounterDisplay();
+      } else {
+        console.warn('Received invalid data from syncLocalClicks:', data);
+        // 同步失败，把本地的点击数加回去，等待下次同步
+        localClickBuffer += clicksToSend;
+      }
+      // --- 关键修改 END ---
+
+    } catch (error) {
+      console.error("Error syncing clicks:", error);
+      localClickBuffer += clicksToSend;
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  // --- 事件处理 ---
+  function handlePointer(evt) {
+    const now = Date.now();
+    if (now - lastClickTime < clickThrottleMs) return;
+    lastClickTime = now;
+
+    localClickBuffer++;
+    // 确保在增加前 total 是一个数字
+    if(typeof total === 'number' && !isNaN(total)) {
+        total++;
+    }
+    updateCounterDisplay();
+
+    let x, y;
+    if (evt.touches && evt.touches.length) {
+      x = evt.touches[0].clientX; y = evt.touches[0].clientY;
+    } else if (evt.clientX !== undefined) {
+      x = evt.clientX; y = evt.clientY;
+    } else { return; }
     createBarrage(x, y, '傻逼+1');
   }
 
-  document.addEventListener('pointerdown', handlePointer, {passive: true});
+  // --- 初始化 ---
+  function initialize() {
+    fetchTotalCount();
+    setInterval(syncLocalClicks, SYNC_INTERVAL_MS);
+    setInterval(fetchTotalCount, FETCH_TOTAL_INTERVAL_MS);
+    document.addEventListener('pointerdown', handlePointer, {passive: true});
+  }
+  
+  initialize();
 })();
 </script>
 </body>
