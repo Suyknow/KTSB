@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>腿三傻逼！</title>
 <style>
-  /* 问题 4: 解决页面右侧出现空白区域(可滑动)的问题 */
   html, body {
     overflow-x: hidden;
   }
@@ -119,7 +118,7 @@
   }
 
   .message-input-area input {
-    flex: 1 1 0; /* 使用更稳健的flex布局，防止按钮被挤走 */
+    flex: 1 1 0;
     padding: 10px 12px;
     border-radius: 25px;
     border: none;
@@ -144,14 +143,13 @@
     font-size: 16px;
     cursor: pointer;
     transition: background 0.3s ease;
-    flex-shrink: 0; /* 防止按钮被压缩 */
+    flex-shrink: 0;
   }
 
   @media (max-width: 480px) {
     .barrage { font-size: 16px; }
     .counter { font-size: 12px; }
     .message-input-area { padding: 8px 10px; }
-    /* 额外优化: 修复移动端输入框自动放大的问题 */
     .message-input-area input, .message-input-area button { font-size: 16px; }
     body { padding-bottom: 60px; }
   }
@@ -184,7 +182,6 @@
   const clickThrottleMs = 50; 
   const MAX_CLICKS_PER_SYNC = 20;
 
-  // 问题 1: 历史记录设置为10分钟
   const BARRAGE_HISTORY_SECONDS = 600; 
   const BARRAGE_REFRESH_INTERVAL_MS = 1500;
 
@@ -194,7 +191,6 @@
   let isSyncing = false;
   let lastActivityTime = 0;
   let lastMessageTimestamp = 0;
-  // 问题 2: 用于防止自己发送的弹幕重复显示的集合
   const recentlySentMessages = new Set();
 
   const counterEl = document.getElementById('counter');
@@ -299,11 +295,10 @@
     const trimmedMessage = message.trim();
     if (!trimmedMessage) return;
 
-    // 问题 2: 发送前，将消息加入去重列表，并在5秒后移除
     recentlySentMessages.add(trimmedMessage);
     setTimeout(() => recentlySentMessages.delete(trimmedMessage), 5000);
 
-    createBarrage(trimmedMessage); // 立即在本地显示
+    createBarrage(trimmedMessage, true);
     messageInput.value = '';
     checkMessageInput();
 
@@ -321,20 +316,37 @@
     }
   }
 
-  async function fetchMessages(sinceTimestamp = 0) {
+  // 新增功能: 修改 fetchMessages 函数以支持交错显示
+  async function fetchMessages(sinceTimestamp = 0, isInitialLoad = false) {
     try {
       const response = await fetch(`${MESSAGES_API_ENDPOINT}?since=${sinceTimestamp}`);
       const data = await response.json();
-      if (data && Array.isArray(data.messages)) {
-        data.messages.forEach(msg => {
-          if (msg.timestamp > lastMessageTimestamp) {
-            // 问题 2: 显示前检查是否是自己刚发送的
+
+      if (data && Array.isArray(data.messages) && data.messages.length > 0) {
+        
+        // 更新 lastMessageTimestamp 为本次获取到的最新时间戳
+        const latestTimestampInBatch = data.messages.reduce((max, msg) => Math.max(max, msg.timestamp), lastMessageTimestamp);
+        lastMessageTimestamp = latestTimestampInBatch;
+
+        // 如果是首次加载，则交错显示历史弹幕
+        if (isInitialLoad) {
+          data.messages.forEach((msg, index) => {
+            const delay = index * 300 + Math.random() * 200; // 0.3秒基础延时 + 0.2秒随机抖动
+            setTimeout(() => {
+              // 历史弹幕使用 isRealtime = false，使其在原地出现和消失
+              createBarrage(msg.message, false); 
+            }, delay);
+          });
+        } 
+        // 否则（实时轮询），立即显示新弹幕
+        else {
+          data.messages.forEach(msg => {
             if (!recentlySentMessages.has(msg.message)) {
-              createBarrage(msg.message, true); // 此处第二个参数isRealtime应为true
+              // 实时弹幕使用 isRealtime = true，使其飞过屏幕
+              createBarrage(msg.message, true);
             }
-            lastMessageTimestamp = msg.timestamp;
-          }
-        });
+          });
+        }
       }
     } catch (error) { console.error("Error fetching messages:", error); }
   }
@@ -396,7 +408,9 @@
     document.body.addEventListener('pointerdown', handlePointer, {passive: true});
 
     lastMessageTimestamp = Date.now() - (BARRAGE_HISTORY_SECONDS * 1000);
-    fetchMessages(lastMessageTimestamp);
+    // 新增功能: 调用 fetchMessages 时，传入 true 表示这是首次加载
+    fetchMessages(lastMessageTimestamp, true); 
+    // 后续的实时轮询不传第二个参数，默认为 false
     setInterval(() => fetchMessages(lastMessageTimestamp), BARRAGE_REFRESH_INTERVAL_MS);
 
     messageInput.addEventListener('input', checkMessageInput);
