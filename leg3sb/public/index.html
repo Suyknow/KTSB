@@ -280,4 +280,92 @@
       setTimeout(() => recentlySentMessages.delete(trimmedMessage), 10000);
 
       createBarrage(trimmedMessage, 'message');
-      messageInput.value
+      messageInput.value = '';
+      checkMessageInput();
+
+      try {
+          sendMessageBtn.disabled = true;
+          await fetch(MESSAGES_API_ENDPOINT, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ message: trimmedMessage })
+          });
+      } catch (error) {
+          console.error("Error sending message:", error);
+      } finally {
+        checkMessageInput();
+      }
+  }
+
+  async function fetchMessages(sinceTimestamp = 0) {
+      try {
+          const response = await fetch(`${MESSAGES_API_ENDPOINT}?since=${sinceTimestamp}`);
+          const data = await response.json();
+
+          if (data && Array.isArray(data.messages)) {
+              data.messages.sort((a, b) => a.timestamp - b.timestamp);
+
+              data.messages.forEach(msg => {
+                  if (msg.timestamp > lastMessageTimestamp) {
+                      if (!recentlySentMessages.has(msg.message)) {
+                          createBarrage(msg.message, 'message');
+                      }
+                      lastMessageTimestamp = msg.timestamp;
+                  }
+              });
+          }
+      } catch (error) {
+          console.error("Error fetching messages:", error);
+      }
+  }
+  
+  function handlePointer(evt) {
+    if (messageArea.contains(evt.target)) {
+        return;
+    }
+
+    const now = Date.now();
+    if (now - lastActivityTime < clickThrottleMs) return;
+    lastActivityTime = now;
+
+    localClickBuffer++;
+    total++;
+    updateCounterDisplay();
+    
+    createClickFeedback(evt.clientX, evt.clientY);
+  }
+
+  function checkMessageInput() {
+      sendMessageBtn.disabled = messageInput.value.trim().length === 0;
+  }
+
+  function handleInputKeydown(event) {
+      if (event.key === 'Enter' && !sendMessageBtn.disabled) {
+          sendMessage(messageInput.value);
+      }
+  }
+
+  async function fetchTotalCount() { try { const response = await fetch(COUNTER_API_ENDPOINT); if (!response.ok) throw new Error(`Network error`); const data = await response.json(); if (data && typeof data.total === 'number') { total = data.total; updateCounterDisplay(); } } catch (error) { console.error("Error fetching total count:", error); } }
+  async function syncLocalClicks() { if (localClickBuffer === 0 || isSyncing) return; isSyncing = true; const clicksToSend = Math.min(localClickBuffer, MAX_CLICKS_PER_SYNC); localClickBuffer = 0; try { const response = await fetch(COUNTER_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ incrementBy: clicksToSend }) }); if (!response.ok) throw new Error(`Network error`); const data = await response.json(); if (data && typeof data.total === 'number') { total = data.total + localClickBuffer; updateCounterDisplay(); } else { localClickBuffer += clicksToSend; } } catch (error) { console.error("Error syncing clicks:", error); localClickBuffer += clicksToSend; } finally { isSyncing = false; } }
+  async function masterSyncLoop() { if (isSyncing) return; const now = Date.now(); const isUserActive = (now - lastActivityTime) < INACTIVITY_THRESHOLD_MS; if (localClickBuffer > 0) { await syncLocalClicks(); } else if (!isUserActive) { await fetchTotalCount(); } }
+
+  function initialize() {
+    fetchTotalCount();
+    setInterval(masterSyncLoop, SYNC_INTERVAL_MS);
+    document.body.addEventListener('pointerdown', handlePointer, {passive: true});
+
+    lastMessageTimestamp = Date.now() - (BARRAGE_HISTORY_SECONDS * 1000);
+    fetchMessages(lastMessageTimestamp);
+    setInterval(() => fetchMessages(lastMessageTimestamp), BARRAGE_REFRESH_INTERVAL_MS);
+
+    messageInput.addEventListener('input', checkMessageInput);
+    sendMessageBtn.addEventListener('click', () => sendMessage(messageInput.value));
+    messageInput.addEventListener('keydown', handleInputKeydown);
+    checkMessageInput();
+  }
+  
+  initialize();
+})();
+</script>
+</body>
+</html>
