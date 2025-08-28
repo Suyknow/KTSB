@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>腿三傻逼！</title>
 <style>
-  /* 问题 2: 解决页面右侧出现空白区域的问题 */
   html, body {
     overflow-x: hidden;
   }
@@ -14,7 +13,7 @@
   html,body { height: 100%; width: 100%; }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans CJK SC", "PingFang SC", "Hiragino Sans GB", "Microsoft Yahei", "WenQuanYi Micro Hei", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans CJK SC", "PingFang SC", "Hiragaino Sans GB", "Microsoft Yahei", "WenQuanYi Micro Hei", sans-serif;
     background-image: url("https://s2.loli.net/2025/08/28/9VAWwyedDJimp6t.jpg");
     background-size: cover;
     background-position: center;
@@ -134,7 +133,7 @@
     border: none;
     background: rgba(255,255,255,0.15);
     color: #fff;
-    font-size: 16px; /* 默认字体大小设为16px */
+    font-size: 16px;
     outline: none;
     transition: background 0.3s ease;
   }
@@ -154,7 +153,7 @@
     background: #ffef3a;
     color: #333;
     font-weight: bold;
-    font-size: 16px; /* 默认字体大小设为16px */
+    font-size: 16px;
     cursor: pointer;
     transition: background 0.3s ease;
     flex-shrink: 0;
@@ -176,7 +175,6 @@
     .counter { font-size: 12px; padding: 4px 10px; }
     .message-input-area { padding: 8px 10px; gap: 8px; }
     .message-input-area input, .message-input-area button {
-      /* 问题 4: 修复移动端输入框自动放大的问题 */
       font-size: 16px;
       padding: 8px 15px;
     }
@@ -224,158 +222,18 @@
   const messageArea = document.getElementById('messageArea');
   const messageInput = document.getElementById('messageInput');
   const sendMessageBtn = document.getElementById('sendMessageBtn');
+  const bgColors = [
+    'rgba(0,0,0,0.45)', 'rgba(32,140,190,0.9)', 'rgba(255,69,0,0.85)',
+    'rgba(70,70,70,0.7)', 'rgba(0,128,0,0.7)'
+  ];
 
   // --- 函数定义 ---
   
-  // 问题 3: 修复弹幕中途消失的问题
-  function createBarrage(text, type = 'message') {
+  // 问题 3: 修复用户弹幕中途消失的问题
+  function createUserBarrage(text) {
     const el = document.createElement('span');
-    el.className = `barrage type-${type}`;
+    el.className = 'barrage type-message';
     el.textContent = text;
-    
     document.body.appendChild(el);
 
-    const duration = 10000 + Math.random() * 5000; // 10-15秒随机速度
-    const top = Math.random() * (window.innerHeight * 0.7);
-
-    el.style.top = `${top}px`;
-    // 使用 vw 和 % 单位确保完整穿越屏幕
-    el.style.transform = 'translateX(100vw)';
-
-    requestAnimationFrame(() => {
-        el.style.transition = `transform ${duration}ms linear`;
-        el.style.transform = 'translateX(-100%)';
-    });
-
-    setTimeout(() => {
-        if (el.parentNode) {
-            el.parentNode.removeChild(el);
-        }
-    }, duration);
-  }
-
-  // 问题 1: 恢复点击弹幕的效果
-  function createClickFeedback(x, y) {
-      const el = document.createElement('span');
-      el.className = 'barrage type-click';
-      el.textContent = '傻逼+1';
-      const bgColors = ['rgba(0,0,0,0.45)', 'rgba(32,140,190,0.9)', 'rgba(255,69,0,0.85)'];
-      el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
-
-      // 恢复到最初有效的动画逻辑
-      el.style.left = `${x}px`;
-      el.style.top = `${y}px`;
-      el.style.transform = `translate(-50%, -50%)`; // 居中于点击点
-      el.style.opacity = '1';
-      document.body.appendChild(el);
-
-      requestAnimationFrame(() => {
-          const up = 60 + Math.random() * 80;
-          const dx = (Math.random() - 0.5) * 120; // 增加一点随机左右偏移
-          el.style.transition = 'transform 1.2s cubic-bezier(.22,.9,.35,1), opacity 1.2s ease-in';
-          el.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% - ${up}px)) scale(1.08)`;
-          el.style.opacity = '0';
-      });
-
-      setTimeout(() => {
-          if (el.parentNode) el.parentNode.removeChild(el);
-      }, 1400);
-  }
-
-  async function sendMessage(message) {
-      const trimmedMessage = message.trim();
-      if (!trimmedMessage) return;
-
-      recentlySentMessages.add(trimmedMessage);
-      setTimeout(() => recentlySentMessages.delete(trimmedMessage), 10000);
-
-      createBarrage(trimmedMessage, 'message');
-      messageInput.value = '';
-      checkMessageInput();
-
-      try {
-          sendMessageBtn.disabled = true;
-          await fetch(MESSAGES_API_ENDPOINT, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ message: trimmedMessage })
-          });
-      } catch (error) {
-          console.error("Error sending message:", error);
-      } finally {
-        checkMessageInput();
-      }
-  }
-
-  async function fetchMessages(sinceTimestamp = 0) {
-      try {
-          const response = await fetch(`${MESSAGES_API_ENDPOINT}?since=${sinceTimestamp}`);
-          const data = await response.json();
-
-          if (data && Array.isArray(data.messages)) {
-              data.messages.sort((a, b) => a.timestamp - b.timestamp);
-
-              data.messages.forEach(msg => {
-                  if (msg.timestamp > lastMessageTimestamp) {
-                      if (!recentlySentMessages.has(msg.message)) {
-                          createBarrage(msg.message, 'message');
-                      }
-                      lastMessageTimestamp = msg.timestamp;
-                  }
-              });
-          }
-      } catch (error) {
-          console.error("Error fetching messages:", error);
-      }
-  }
-  
-  function handlePointer(evt) {
-    if (messageArea.contains(evt.target)) {
-        return;
-    }
-
-    const now = Date.now();
-    if (now - lastActivityTime < clickThrottleMs) return;
-    lastActivityTime = now;
-
-    localClickBuffer++;
-    total++;
-    updateCounterDisplay();
-    
-    createClickFeedback(evt.clientX, evt.clientY);
-  }
-
-  function checkMessageInput() {
-      sendMessageBtn.disabled = messageInput.value.trim().length === 0;
-  }
-
-  function handleInputKeydown(event) {
-      if (event.key === 'Enter' && !sendMessageBtn.disabled) {
-          sendMessage(messageInput.value);
-      }
-  }
-
-  async function fetchTotalCount() { try { const response = await fetch(COUNTER_API_ENDPOINT); if (!response.ok) throw new Error(`Network error`); const data = await response.json(); if (data && typeof data.total === 'number') { total = data.total; updateCounterDisplay(); } } catch (error) { console.error("Error fetching total count:", error); } }
-  async function syncLocalClicks() { if (localClickBuffer === 0 || isSyncing) return; isSyncing = true; const clicksToSend = Math.min(localClickBuffer, MAX_CLICKS_PER_SYNC); localClickBuffer = 0; try { const response = await fetch(COUNTER_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ incrementBy: clicksToSend }) }); if (!response.ok) throw new Error(`Network error`); const data = await response.json(); if (data && typeof data.total === 'number') { total = data.total + localClickBuffer; updateCounterDisplay(); } else { localClickBuffer += clicksToSend; } } catch (error) { console.error("Error syncing clicks:", error); localClickBuffer += clicksToSend; } finally { isSyncing = false; } }
-  async function masterSyncLoop() { if (isSyncing) return; const now = Date.now(); const isUserActive = (now - lastActivityTime) < INACTIVITY_THRESHOLD_MS; if (localClickBuffer > 0) { await syncLocalClicks(); } else if (!isUserActive) { await fetchTotalCount(); } }
-
-  function initialize() {
-    fetchTotalCount();
-    setInterval(masterSyncLoop, SYNC_INTERVAL_MS);
-    document.body.addEventListener('pointerdown', handlePointer, {passive: true});
-
-    lastMessageTimestamp = Date.now() - (BARRAGE_HISTORY_SECONDS * 1000);
-    fetchMessages(lastMessageTimestamp);
-    setInterval(() => fetchMessages(lastMessageTimestamp), BARRAGE_REFRESH_INTERVAL_MS);
-
-    messageInput.addEventListener('input', checkMessageInput);
-    sendMessageBtn.addEventListener('click', () => sendMessage(messageInput.value));
-    messageInput.addEventListener('keydown', handleInputKeydown);
-    checkMessageInput();
-  }
-  
-  initialize();
-})();
-</script>
-</body>
-</html>
+    const duration = 10000 + Math.random()
