@@ -250,6 +250,7 @@
             if (el && el.parentNode) el.parentNode.removeChild(el);
         }, 8000);
     } else {
+        // 这段逻辑现在不会被调用了，但我们保留它以备不时之需
         const randomX = Math.random() * (window.innerWidth - el.offsetWidth);
         const randomY = Math.random() * (window.innerHeight * 0.7 - LANE_HEIGHT);
         el.style.left = `${randomX}px`;
@@ -316,7 +317,6 @@
     }
   }
 
-  // 新增功能: 修改 fetchMessages 函数以支持交错显示
   async function fetchMessages(sinceTimestamp = 0, isInitialLoad = false) {
     try {
       const response = await fetch(`${MESSAGES_API_ENDPOINT}?since=${sinceTimestamp}`);
@@ -324,25 +324,22 @@
 
       if (data && Array.isArray(data.messages) && data.messages.length > 0) {
         
-        // 更新 lastMessageTimestamp 为本次获取到的最新时间戳
         const latestTimestampInBatch = data.messages.reduce((max, msg) => Math.max(max, msg.timestamp), lastMessageTimestamp);
         lastMessageTimestamp = latestTimestampInBatch;
 
-        // 如果是首次加载，则交错显示历史弹幕
         if (isInitialLoad) {
           data.messages.forEach((msg, index) => {
-            const delay = index * 300 + Math.random() * 200; // 0.3秒基础延时 + 0.2秒随机抖动
+            const delay = index * 300 + Math.random() * 200;
             setTimeout(() => {
-              // 历史弹幕使用 isRealtime = false，使其在原地出现和消失
-              createBarrage(msg.message, false); 
+              // --- 这是唯一的修改 ---
+              // 即使是历史弹幕，也调用 "isRealtime = true" 的飞行效果
+              createBarrage(msg.message, true); 
             }, delay);
           });
         } 
-        // 否则（实时轮询），立即显示新弹幕
         else {
           data.messages.forEach(msg => {
             if (!recentlySentMessages.has(msg.message)) {
-              // 实时弹幕使用 isRealtime = true，使其飞过屏幕
               createBarrage(msg.message, true);
             }
           });
@@ -408,9 +405,7 @@
     document.body.addEventListener('pointerdown', handlePointer, {passive: true});
 
     lastMessageTimestamp = Date.now() - (BARRAGE_HISTORY_SECONDS * 1000);
-    // 新增功能: 调用 fetchMessages 时，传入 true 表示这是首次加载
     fetchMessages(lastMessageTimestamp, true); 
-    // 后续的实时轮询不传第二个参数，默认为 false
     setInterval(() => fetchMessages(lastMessageTimestamp), BARRAGE_REFRESH_INTERVAL_MS);
 
     messageInput.addEventListener('input', checkMessageInput);
