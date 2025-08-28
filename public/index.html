@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>腿三傻逼！</title>
+<style>
+  * {box-sizing: border-box; margin: 0; padding: 0;}
+  html,body { height: 100%; width: 100%; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans CJK SC", "PingFang SC", "Hiragino Sans GB", "Microsoft Yahei", "WenQuanYi Micro Hei", sans-serif;
+    background-image: url("https://s2.loli.net/2025/08/28/9VAWwyedDJimp6t.jpg");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    position: relative;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(rgba(0,0,0,0.12), rgba(0,0,0,0.22));
+    pointer-events: none;
+  }
+
+  .container {
+    position: relative;
+    z-index: 2;
+    text-align: center;
+    padding: 5vh 5vw;
+    width: min(1000px, 94%);
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-weight: 900;
+    letter-spacing: 0.02em;
+    font-size: clamp(28px, 8vw, 72px);
+    margin-bottom: 0.6rem;
+    color: #ffef3a;
+    text-shadow: 0 6px 18px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.03);
+  }
+
+  p.subtitle {
+    font-size: clamp(12px, 3.6vw, 20px);
+    color: rgba(255,255,255,0.95);
+    max-width: 900px;
+    margin: 0 auto;
+    line-height: 1.4;
+    text-shadow: 0 3px 10px rgba(0,0,0,0.45);
+  }
+
+  .hint {
+    margin-top: 1.2rem;
+    font-size: 12px;
+    color: rgba(255,255,255,0.9);
+    opacity: 0.9;
+  }
+
+  /* 弹幕样式 */
+  .barrage {
+    position: absolute;
+    z-index: 9999;
+    font-weight: 700;
+    user-select: none;
+    pointer-events: none;
+    white-space: nowrap;
+    will-change: transform, opacity;
+    font-size: 18px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: rgba(0,0,0,0.45);
+    color: #fff;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+  }
+
+  /* 计数器 */
+  .counter {
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    background: rgba(0,0,0,0.55);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #ffef3a;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    z-index: 10000;
+  }
+
+  @media (max-width: 480px) {
+    .barrage { font-size: 16px; padding: 2px 6px; }
+    .hint { font-size: 11px; }
+    .counter { font-size: 12px; padding: 4px 10px; }
+  }
+</style>
+</head>
+<body>
+  <div class="overlay" aria-hidden="true"></div>
+
+  <div class="container" role="main" aria-live="polite">
+    <h1>腿三傻逼！</h1>
+    <p class="subtitle">我们都有一个共同的朋友，他叫腿三，很不幸，也很幸运地，他是个傻逼。</p>
+    <div class="hint">点击或触摸任意位置，会在点击处生成“傻逼+1”的弹幕。</div>
+  </div>
+
+  <!-- 右上角计数器 -->
+  <div class="counter" id="counter">总傻逼 +0</div>
+
+<script>
+(function(){
+  let lastTime = 0;
+  let total = 0;
+  const counterEl = document.getElementById('counter');
+
+  const bgColors = [
+    'rgba(0,0,0,0.45)',
+    'rgba(32,140,190,0.9)',
+    'rgba(255,69,0,0.85)',
+    'rgba(70,70,70,0.7)',
+    'rgba(0,128,0,0.7)'
+  ];
+
+  function updateCounter() {
+    counterEl.textContent = `总傻逼 +${total}`;
+  }
+
+  function createBarrage(x, y, text) {
+    total++;
+    updateCounter();
+
+    const el = document.createElement('span');
+    el.className = 'barrage';
+    el.textContent = text;
+    el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
+    const pad = 8;
+    const w = Math.min(window.innerWidth, document.documentElement.clientWidth);
+    const h = Math.min(window.innerHeight, document.documentElement.clientHeight);
+    el.style.left = Math.max(pad, Math.min(w - pad - 100, x)) + 'px';
+    el.style.top  = Math.max(pad, Math.min(h - pad - 20, y)) + 'px';
+    el.style.transform = 'translateY(0) scale(1)';
+    el.style.opacity = '1';
+    document.body.appendChild(el);
+
+    requestAnimationFrame(() => {
+      const up = 60 + Math.random()*80;
+      const dx = (Math.random() - 0.5) * 120;
+      el.style.transition = 'transform 1200ms cubic-bezier(.22,.9,.35,1), opacity 1200ms ease-in';
+      el.style.transform = `translate(${dx}px, -${up}px) scale(1.08)`;
+      el.style.opacity = '0';
+    });
+
+    setTimeout(()=> {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }, 1400);
+  }
+
+  function handlePointer(evt) {
+    const now = Date.now();
+    if (now - lastTime < 20) return;
+    lastTime = now;
+    let x, y;
+    if (evt.touches && evt.touches.length) {
+      x = evt.touches[0].clientX;
+      y = evt.touches[0].clientY;
+    } else if (evt.clientX !== undefined) {
+      x = evt.clientX;
+      y = evt.clientY;
+    } else {
+      return;
+    }
+    createBarrage(x, y, '傻逼+1');
+  }
+
+  document.addEventListener('pointerdown', handlePointer, {passive: true});
+  document.addEventListener('touchstart', handlePointer, {passive: true});
+  document.addEventListener('mousedown', handlePointer, {passive: true});
+})();
+</script>
+</body>
+</html>
