@@ -118,15 +118,12 @@
 (function(){
   // --- 配置 ---
   const API_ENDPOINT = '/api/counter';
-
-  // --- 变更点 1: 修改提交间隔为 1000ms ---
   const SYNC_INTERVAL_MS = 1000; 
-  const FETCH_TOTAL_INTERVAL_MS = 1000;
 
-  // --- 变更点 2: 修改点击节流间隔为 50ms ---
+  // --- 关键修复：将轮询间隔改回合理的5秒 ---
+  const FETCH_TOTAL_INTERVAL_MS = 5000;
+
   const clickThrottleMs = 50; 
-
-  // --- 变更点 3: 新增每秒最大提交次数限制 ---
   const MAX_CLICKS_PER_SYNC = 20;
 
   // --- 状态变量 ---
@@ -149,7 +146,6 @@
   }
 
   function createBarrage(x, y, text) {
-    // ... (视觉效果逻辑不变) ...
     const el = document.createElement('span');
     el.className = 'barrage';
     el.textContent = text;
@@ -175,7 +171,6 @@
   }
 
   // --- 核心网络逻辑 ---
-
   async function fetchTotalCount() {
     try {
       const response = await fetch(API_ENDPOINT);
@@ -198,11 +193,7 @@
     }
     isSyncing = true;
     
-    // --- 变更点 4: 验证并限制将要提交的次数 ---
-    // 取当前缓存的点击数和上限中的较小值
     const clicksToSend = Math.min(localClickBuffer, MAX_CLICKS_PER_SYNC);
-    
-    // 从本地缓存中减去即将发送的部分
     localClickBuffer -= clicksToSend; 
 
     try {
@@ -218,7 +209,6 @@
         updateCounterDisplay();
       } else {
         console.warn('Received invalid data from syncLocalClicks:', data);
-        // 如果同步失败，把刚才没成功发送的点击数加回来，等待下次同步
         localClickBuffer += clicksToSend;
       }
     } catch (error) {
@@ -232,7 +222,6 @@
   // --- 事件处理 ---
   function handlePointer(evt) {
     const now = Date.now();
-    // 使用新的 50ms 间隔限制
     if (now - lastClickTime < clickThrottleMs) return;
     lastClickTime = now;
 
@@ -254,7 +243,6 @@
   // --- 初始化 ---
   function initialize() {
     fetchTotalCount();
-    // 使用新的 1000ms 间隔
     setInterval(syncLocalClicks, SYNC_INTERVAL_MS);
     setInterval(fetchTotalCount, FETCH_TOTAL_INTERVAL_MS);
     document.addEventListener('pointerdown', handlePointer, {passive: true});
