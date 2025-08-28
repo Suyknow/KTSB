@@ -87,7 +87,6 @@
   }
 
   .barrage.type-click {
-    /* 这个背景色是备用，实际颜色由JS随机指定 */
     background: rgba(0,0,0,0.45);
     color: #fff;
     text-shadow: 0 2px 6px rgba(0,0,0,0.6);
@@ -186,17 +185,24 @@
 
 <script>
 (function(){
-  // --- 配置 ---
+  // --- 计数器模块配置 ---
   const COUNTER_API_ENDPOINT = '/api/counter';
+  const SYNC_INTERVAL_MS = 1000;
+  const clickThrottleMs = 50;
+  const MAX_CLICKS_PER_SYNC = 20;
+
+  // --- 弹幕模块配置 ---
   const MESSAGES_API_ENDPOINT = '/api/messages';
   const INITIAL_BARRAGE_COUNT = 200;
   const INITIAL_ANIMATION_DURATION = 10000;
   const BARRAGE_REFRESH_INTERVAL_MS = 2500;
-  const SYNC_INTERVAL_MS = 1000;
 
   // --- 状态变量 ---
   let total = 0;
   let localClickBuffer = 0;
+  let isSyncing = false;
+  let lastClickTime = 0;
+
   let lastMessageTimestamp = 0;
   const recentlySentMessages = new Set();
 
@@ -206,40 +212,30 @@
   const sendMessageBtn = document.getElementById('sendMessageBtn');
   const bgColors = ['rgba(0,0,0,0.45)', 'rgba(32,140,190,0.9)', 'rgba(255,69,0,0.85)'];
 
-  // --- 弹幕函数 ---
+  // --- 弹幕相关函数 ---
 
   function createFlyingBarrage(text, type = 'realtime') {
     const el = document.createElement('span');
     el.className = `barrage type-${type}`;
     el.textContent = text;
     document.body.appendChild(el);
-
     const duration = 12000 + Math.random() * 5000;
     const top = Math.random() * (window.innerHeight * 0.7);
-
     el.style.top = `${top}px`;
     el.style.left = '100vw'; 
     el.style.transform = 'translateX(0)';
-
     requestAnimationFrame(() => {
         el.style.transition = `transform ${duration}ms linear`;
         el.style.transform = `translateX(calc(-100vw - 100%))`;
     });
-
-    setTimeout(() => {
-        if (el.parentNode) el.parentNode.removeChild(el);
-    }, duration);
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, duration);
   }
 
   function createClickBarrage(x, y, text) {
     const el = document.createElement('span');
     el.className = 'barrage type-click';
     el.textContent = text;
-    
-    // --- 关键修复：恢复随机彩色背景 ---
-    // 这行代码是恢复您喜欢的样式的关键
     el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
-    
     const pad = 8, w = window.innerWidth, h = window.innerHeight;
     el.style.left = `${Math.max(pad, Math.min(w - pad - 100, x))}px`;
     el.style.top  = `${Math.max(pad, Math.min(h - pad - 20, y))}px`;
@@ -253,43 +249,28 @@
       el.style.transform = `translate(${dx}px, -${up}px) scale(1.08)`;
       el.style.opacity = '0';
     });
-    setTimeout(()=> {
-      if (el && el.parentNode) el.parentNode.removeChild(el);
-    }, 1400);
+    setTimeout(()=> { if (el && el.parentNode) el.parentNode.removeChild(el); }, 1400);
   }
-
-  // --- 网络与逻辑 ---
 
   async function runInitialBarrageSequence() {
     try {
       const response = await fetch(`${MESSAGES_API_ENDPOINT}?limit=${INITIAL_BARRAGE_COUNT}`);
       const data = await response.json();
-      if (!data || !Array.isArray(data.messages)) return;
+      if (!data || !Array.isArray(data.messages) || data.messages.length === 0) return;
       
       const messages = data.messages;
-      if (messages.length === 0) return;
-
       lastMessageTimestamp = messages[messages.length - 1].timestamp;
-
       let currentIndex = 0;
       const startTime = Date.now();
-
       function playNext() {
         if (Date.now() - startTime > INITIAL_ANIMATION_DURATION) return;
-
-        let burstSize = 1;
-        if (messages.length > 50) {
-          burstSize = 1 + Math.floor(Math.random() * 3);
-        }
-
+        let burstSize = messages.length > 50 ? 1 + Math.floor(Math.random() * 3) : 1;
         for (let i = 0; i < burstSize && currentIndex < messages.length; i++) {
           createFlyingBarrage(messages[currentIndex].message, 'history');
           currentIndex++;
         }
-
         if (currentIndex < messages.length) {
-          const timeElapsed = Date.now() - startTime;
-          const timeRemaining = INITIAL_ANIMATION_DURATION - timeElapsed;
+          const timeRemaining = INITIAL_ANIMATION_DURATION - (Date.now() - startTime);
           const messagesRemaining = messages.length - currentIndex;
           const avgDelay = timeRemaining / messagesRemaining;
           const randomDelay = avgDelay * (0.5 + Math.random());
@@ -297,23 +278,17 @@
         }
       }
       playNext();
-
-    } catch(error) {
-      console.error("Failed to fetch initial barrages:", error);
-    }
+    } catch(error) { console.error("Failed to fetch initial barrages:", error); }
   }
 
   async function sendMessage(message) {
       const trimmedMessage = message.trim();
       if (!trimmedMessage) return;
-
       recentlySentMessages.add(trimmedMessage);
       setTimeout(() => recentlySentMessages.delete(trimmedMessage), 5000);
-
       createFlyingBarrage(trimmedMessage, 'user-sent');
       messageInput.value = '';
       checkMessageInput();
-
       try {
           await fetch(MESSAGES_API_ENDPOINT, {
               method: 'POST',
@@ -340,57 +315,86 @@
       } catch (error) { console.error("Error fetching new messages:", error); }
   }
   
+  function checkMessageInput() { sendMessageBtn.disabled = messageInput.value.trim().length === 0; }
+  function handleInputKeydown(event) { if (event.key === 'Enter' && !sendMessageBtn.disabled) sendMessage(messageInput.value); }
+
+  // --- 计数器相关函数 (恢复到第一版稳定逻辑) ---
+  
+  function updateCounterDisplay() {
+    if (typeof total === 'number' && !isNaN(total)) {
+      counterEl.textContent = `总傻逼 +${Math.round(total)}`;
+    }
+  }
+  
+  async function fetchTotalCount() {
+    try {
+      const response = await fetch(COUNTER_API_ENDPOINT);
+      const data = await response.json();
+      if (data && typeof data.total === 'number' && localClickBuffer === 0) {
+        total = data.total;
+        updateCounterDisplay();
+      }
+    } catch (error) { console.error("Error fetching total count:", error); }
+  }
+
+  async function syncLocalClicks() {
+    if (localClickBuffer === 0 || isSyncing) return;
+    isSyncing = true;
+    const clicksToSend = Math.min(localClickBuffer, MAX_CLICKS_PER_SYNC);
+    localClickBuffer -= clicksToSend;
+    try {
+      const response = await fetch(COUNTER_API_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ incrementBy: clicksToSend })
+      });
+      const data = await response.json();
+      if (data && typeof data.total === 'number') {
+        total = data.total;
+        updateCounterDisplay();
+      } else { localClickBuffer += clicksToSend; }
+    } catch (error) { 
+        console.error("Error syncing clicks:", error);
+        localClickBuffer += clicksToSend;
+    } finally { isSyncing = false; }
+  }
+
   function handlePointer(evt) {
     if (messageArea.contains(evt.target)) return;
+    const now = Date.now();
+    if (now - lastClickTime < clickThrottleMs) return;
+    lastClickTime = now;
+    
     localClickBuffer++;
     total++;
     updateCounterDisplay();
     createClickBarrage(evt.clientX, evt.clientY, '傻逼+1');
   }
 
-  function checkMessageInput() {
-    sendMessageBtn.disabled = messageInput.value.trim().length === 0;
-  }
-  
-  function handleInputKeydown(event) {
-    if (event.key === 'Enter' && !sendMessageBtn.disabled) {
-      sendMessage(messageInput.value);
-    }
-  }
-
-  async function syncCounter() { 
+  async function syncOrFetch() {
+    if (isSyncing) return;
     if (localClickBuffer > 0) {
-      const clicksToSend = localClickBuffer;
-      localClickBuffer = 0;
-      try {
-        await fetch(COUNTER_API_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ incrementBy: clicksToSend })
-        });
-      } catch (e) { localClickBuffer += clicksToSend; }
+      await syncLocalClicks();
+    } else {
+      await fetchTotalCount();
     }
-    try {
-      const response = await fetch(COUNTER_API_ENDPOINT);
-      const data = await response.json(); 
-      if (data && typeof data.total === 'number') { 
-        total = data.total + localClickBuffer;
-        updateCounterDisplay();
-      }
-    } catch(e) { /* no-op */ }
   }
 
+  // --- 初始化 ---
   function initialize() {
-    syncCounter();
-    setInterval(syncCounter, SYNC_INTERVAL_MS);
+    // 初始化计数器 (第一版逻辑)
+    fetchTotalCount();
+    setInterval(syncOrFetch, SYNC_INTERVAL_MS);
     document.body.addEventListener('pointerdown', handlePointer, {passive: true});
 
+    // 初始化弹幕 (新功能)
     runInitialBarrageSequence();
     setTimeout(() => {
         fetchNewMessages();
         setInterval(fetchNewMessages, BARRAGE_REFRESH_INTERVAL_MS);
     }, 1000);
 
+    // 初始化输入框 (新功能)
     messageInput.addEventListener('input', checkMessageInput);
     sendMessageBtn.addEventListener('click', () => sendMessage(messageInput.value));
     messageInput.addEventListener('keydown', handleInputKeydown);
