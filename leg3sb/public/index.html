@@ -117,7 +117,8 @@
 (function(){
   // --- 配置 ---
   const API_ENDPOINT = '/api/counter';
-  const SYNC_INTERVAL_MS = 1000; 
+  const SYNC_INTERVAL_MS = 1000;
+  const INACTIVITY_THRESHOLD_MS = 2500;
 
   const clickThrottleMs = 50; 
   const MAX_CLICKS_PER_SYNC = 20;
@@ -126,7 +127,7 @@
   let total = 0;
   let localClickBuffer = 0;
   let isSyncing = false;
-  let lastClickTime = 0;
+  let lastActivityTime = 0;
 
   const counterEl = document.getElementById('counter');
   const bgColors = [
@@ -173,14 +174,8 @@
       if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
       const data = await response.json();
       if (data && typeof data.total === 'number') {
-        // --- THE FIX IS HERE ---
-        // 只有在本地没有待同步的点击时，才用服务器的GET请求结果更新总数。
-        // 这可以防止一个“过时”的fetch请求覆盖掉本地已经乐观更新的UI。
-        if (localClickBuffer === 0) {
-          total = data.total;
-          updateCounterDisplay();
-        }
-        // --- END OF THE FIX ---
+        total = data.total;
+        updateCounterDisplay();
       } else {
         console.warn('Received invalid data from fetchTotalCount:', data);
       }
@@ -189,15 +184,19 @@
     }
   }
   
-  // --- 网络逻辑：POST ---
+  // --- 网络逻辑：POST (已按新要求修改) ---
   async function syncLocalClicks() {
     if (localClickBuffer === 0 || isSyncing) {
       return;
     }
     isSyncing = true;
     
+    // 决定本次要发送的点击数（最多20次）
     const clicksToSend = Math.min(localClickBuffer, MAX_CLICKS_PER_SYNC);
-    localClickBuffer -= clicksToSend; 
+    
+    // *** 这是核心改动 ***
+    // 无论本次发送多少，都立即清空整个缓冲区，丢弃所有多余的点击
+    localClickBuffer = 0;
 
     try {
       const response = await fetch(API_ENDPOINT, {
@@ -208,15 +207,18 @@
       if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
       const data = await response.json();
       if (data && typeof data.total === 'number') {
-        total = data.total; // 来自服务器的权威更新
+        // 使用服务器返回的权威数据，并加上在同步期间可能发生的新点击
+        total = data.total + localClickBuffer;
         updateCounterDisplay();
       } else {
         console.warn('Received invalid data from syncLocalClicks:', data);
-        localClickBuffer += clicksToSend; // 解析失败时，将点击数重新加回缓冲区
+        // 如果请求失败（例如服务器返回格式错误），只把本次尝试发送的点击数加回来重试
+        localClickBuffer += clicksToSend;
       }
     } catch (error) {
       console.error("Error syncing clicks:", error);
-      localClickBuffer += clicksToSend; // 网络错误时，将点击数重新加回缓冲区
+      // 如果请求失败（例如网络中断），也只把本次尝试发送的点击数加回来重试
+      localClickBuffer += clicksToSend;
     } finally {
       isSyncing = false;
     }
@@ -225,13 +227,12 @@
   // --- 事件处理 ---
   function handlePointer(evt) {
     const now = Date.now();
-    if (now - lastClickTime < clickThrottleMs) return;
-    lastClickTime = now;
+    if (now - lastActivityTime < clickThrottleMs) return;
+    
+    lastActivityTime = now;
 
     localClickBuffer++;
-    if(typeof total === 'number' && !isNaN(total)) {
-        total++; // 乐观UI更新
-    }
+    total++;
     updateCounterDisplay();
 
     let x, y;
@@ -243,34 +244,27 @@
     createBarrage(x, y, '傻逼+1');
   }
 
-  // --- 统一的同步/拉取逻辑 ---
-  // 这个函数每秒运行一次，并决定是POST本地点击还是GET最新总数，
-  // 防止两者冲突。
-  async function syncOrFetch() {
-    // 如果一个操作已经在进行中，则不执行任何操作。
+  // --- 主同步循环 ---
+  async function masterSyncLoop() {
     if (isSyncing) {
       return;
     }
+
+    const now = Date.now();
+    const isUserActive = (now - lastActivityTime) < INACTIVITY_THRESHOLD_MS;
     
-    // 如果缓冲区中有点击，则优先发送它们。
     if (localClickBuffer > 0) {
       await syncLocalClicks();
     } 
-    // 如果缓冲区为空（用户空闲），则获取最新计数。
-    else {
+    else if (!isUserActive) {
       await fetchTotalCount();
     }
   }
 
   // --- 初始化 ---
   function initialize() {
-    // 页面加载时获取初始计数。
     fetchTotalCount();
-    
-    // 使用新的、统一的函数替换旧的两个intervals。
-    setInterval(syncOrFetch, SYNC_INTERVAL_MS);
-    
-    // 为点击/轻触附加事件侦听器。
+    setInterval(masterSyncLoop, SYNC_INTERVAL_MS);
     document.addEventListener('pointerdown', handlePointer, {passive: true});
   }
   
