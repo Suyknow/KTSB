@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>腿三傻逼！</title>
 <style>
+  /* 问题 4: 解决页面右侧出现空白区域(可滑动)的问题 */
+  html, body {
+    overflow-x: hidden;
+  }
+
   * {box-sizing: border-box; margin: 0; padding: 0;}
   html,body { height: 100%; width: 100%; }
 
@@ -18,10 +23,10 @@
     color: #fff;
     min-height: 100dvh;
     display: flex;
-    flex-direction: column; /* Changed to column for input at bottom */
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding-bottom: 70px; /* Space for the input area */
+    padding-bottom: 70px;
   }
 
   .overlay {
@@ -38,10 +43,10 @@
     padding: 5vh 5vw;
     width: min(1000px, 94%);
     margin: 0 auto;
-    flex-grow: 1; /* Allow container to take available space */
+    flex-grow: 1;
     display: flex;
     flex-direction: column;
-    justify-content: center; /* Center content vertically in the container */
+    justify-content: center;
   }
 
   h1 {
@@ -69,7 +74,6 @@
     opacity: 0.9;
   }
 
-  /* 弹幕样式 */
   .barrage {
     position: absolute;
     z-index: 9999;
@@ -86,7 +90,6 @@
     text-shadow: 0 2px 6px rgba(0,0,0,0.6);
   }
 
-  /* 计数器 */
   .counter {
     position: fixed;
     top: 12px;
@@ -101,7 +104,6 @@
     z-index: 10000;
   }
 
-  /* 新增：弹幕输入区 */
   .message-input-area {
     position: fixed;
     bottom: 0;
@@ -117,7 +119,7 @@
   }
 
   .message-input-area input {
-    flex-grow: 1;
+    flex: 1 1 0; /* 使用更稳健的flex布局，防止按钮被挤走 */
     padding: 10px 12px;
     border-radius: 25px;
     border: none;
@@ -132,10 +134,6 @@
     color: rgba(255,255,255,0.6);
   }
 
-  .message-input-area input:focus {
-    background: rgba(255,255,255,0.25);
-  }
-
   .message-input-area button {
     padding: 10px 20px;
     border-radius: 25px;
@@ -146,23 +144,15 @@
     font-size: 16px;
     cursor: pointer;
     transition: background 0.3s ease;
-  }
-
-  .message-input-area button:hover {
-    background: #ffe300;
-  }
-
-  .message-input-area button:disabled {
-    background: rgba(255,239,58,0.5);
-    cursor: not-allowed;
+    flex-shrink: 0; /* 防止按钮被压缩 */
   }
 
   @media (max-width: 480px) {
-    .barrage { font-size: 16px; padding: 2px 6px; }
-    .hint { font-size: 11px; }
-    .counter { font-size: 12px; padding: 4px 10px; }
+    .barrage { font-size: 16px; }
+    .counter { font-size: 12px; }
     .message-input-area { padding: 8px 10px; }
-    .message-input-area input, .message-input-area button { font-size: 14px; padding: 8px 15px; }
+    /* 额外优化: 修复移动端输入框自动放大的问题 */
+    .message-input-area input, .message-input-area button { font-size: 16px; }
     body { padding-bottom: 60px; }
   }
 </style>
@@ -178,8 +168,8 @@
 
   <div class="counter" id="counter">总傻逼 +0</div>
 
-  <div class="message-input-area">
-    <input type="text" id="messageInput" placeholder="发个弹幕骂腿三吧..." maxlength="50" />
+  <div class="message-input-area" id="messageArea">
+    <input type="text" id="messageInput" placeholder="发个弹幕吧～" maxlength="50" />
     <button id="sendMessageBtn" disabled>发送</button>
   </div>
 
@@ -187,37 +177,39 @@
 (function(){
   // --- 配置 ---
   const COUNTER_API_ENDPOINT = '/api/counter';
-  const MESSAGES_API_ENDPOINT = '/api/messages'; // 新增：弹幕API端点
+  const MESSAGES_API_ENDPOINT = '/api/messages';
 
   const SYNC_INTERVAL_MS = 1000;
   const INACTIVITY_THRESHOLD_MS = 2500;
-
   const clickThrottleMs = 50; 
   const MAX_CLICKS_PER_SYNC = 20;
 
-  const BARRAGE_HISTORY_SECONDS = 30; // 首次加载时获取的弹幕历史秒数
-  const BARRAGE_REFRESH_INTERVAL_MS = 1500; // 实时弹幕刷新间隔
+  // 问题 1: 历史记录设置为10分钟
+  const BARRAGE_HISTORY_SECONDS = 600; 
+  const BARRAGE_REFRESH_INTERVAL_MS = 1500;
 
   // --- 状态变量 ---
   let total = 0;
   let localClickBuffer = 0;
   let isSyncing = false;
   let lastActivityTime = 0;
-  let lastMessageTimestamp = 0; // 新增：用于追踪最后一条显示弹幕的时间戳
+  let lastMessageTimestamp = 0;
+  // 问题 2: 用于防止自己发送的弹幕重复显示的集合
+  const recentlySentMessages = new Set();
 
   const counterEl = document.getElementById('counter');
-  const messageInput = document.getElementById('messageInput'); // 新增
-  const sendMessageBtn = document.getElementById('sendMessageBtn'); // 新增
+  const messageArea = document.getElementById('messageArea');
+  const messageInput = document.getElementById('messageInput');
+  const sendMessageBtn = document.getElementById('sendMessageBtn');
 
   const bgColors = [
     'rgba(0,0,0,0.45)', 'rgba(32,140,190,0.9)', 'rgba(255,69,0,0.85)',
     'rgba(70,70,70,0.7)', 'rgba(0,128,0,0.7)'
   ];
   
-  // 弹幕位置管理（避免重叠）
-  const barrageLanes = []; // 用于存储每条弹幕的Y轴位置和结束时间
-  const LANE_HEIGHT = 30; // 每条弹幕轨道的高度
-  const MAX_LANES = Math.floor(window.innerHeight * 0.7 / LANE_HEIGHT); // 页面70%的高度用于弹幕
+  const barrageLanes = [];
+  const LANE_HEIGHT = 30;
+  const MAX_LANES = Math.floor(window.innerHeight * 0.7 / LANE_HEIGHT);
 
   // --- UI 更新函数 ---
   function updateCounterDisplay() {
@@ -226,7 +218,6 @@
     }
   }
 
-  // 修改：createBarrage函数现在需要更智能地放置弹幕
   function createBarrage(text, isRealtime = true) {
     const el = document.createElement('span');
     el.className = 'barrage';
@@ -234,118 +225,68 @@
     el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
     document.body.appendChild(el);
 
-    // 随机选择弹幕的起始X位置
     const startX = window.innerWidth;
-    const endX = -el.offsetWidth; // 弹幕完全移出屏幕的X位置
+    const endX = -el.offsetWidth;
 
-    // 寻找合适的Y轴轨道
     let laneY = 0;
     let foundLane = false;
     const now = Date.now();
 
     for (let i = 0; i < MAX_LANES; i++) {
-        if (!barrageLanes[i] || barrageLanes[i].endTime < now) { // 如果轨道为空或已过期
+        if (!barrageLanes[i] || barrageLanes[i].endTime < now) {
             laneY = i * LANE_HEIGHT;
-            barrageLanes[i] = {
-                endTime: now + (isRealtime ? 8000 : 0) + (el.offsetWidth / (window.innerWidth / 8000)) * 1000, // 估算弹幕离开屏幕的时间
-                // 8000ms是动画时间，加上一个基于弹幕宽度和屏幕宽度的额外时间，确保弹幕完全离开
-                // 对于历史弹幕，我们不立即设置endTime，而是让它们静止显示
-            };
+            barrageLanes[i] = { endTime: now + 8000 };
             foundLane = true;
             break;
         }
     }
-    // 如果没有找到空闲轨道，就放到最上面（可能重叠）
-    if (!foundLane) {
-        laneY = 0; // 默认最顶层
-        // 清理最老的轨道，防止无限增长
-        const oldestLaneIndex = barrageLanes.reduce((minIdx, current, idx, arr) => (current && arr[minIdx] && current.endTime < arr[minIdx].endTime) ? idx : minIdx, 0);
-        if (barrageLanes[oldestLaneIndex]) {
-             barrageLanes[oldestLaneIndex] = {
-                endTime: now + (isRealtime ? 8000 : 0) + (el.offsetWidth / (window.innerWidth / 8000)) * 1000,
-             };
-        }
-    }
+    if (!foundLane) laneY = Math.floor(Math.random() * MAX_LANES) * LANE_HEIGHT;
     
     el.style.top = `${laneY}px`;
-    el.style.left = `${startX}px`; // 从屏幕右侧开始
+    el.style.left = `${startX}px`;
 
     if (isRealtime) {
         requestAnimationFrame(() => {
-            el.style.transition = `transform 8s linear`; // 8秒内从右到左移动
-            el.style.transform = `translateX(${endX - startX}px)`; // 移动到屏幕左侧之外
+            el.style.transition = `transform 8s linear`;
+            el.style.transform = `translateX(${endX - startX}px)`;
         });
         setTimeout(()=> {
             if (el && el.parentNode) el.parentNode.removeChild(el);
-            // 清理对应轨道，但要确保endTime是当前弹幕的endTime
-            for(let i=0; i<MAX_LANES; i++) {
-                if (barrageLanes[i] && barrageLanes[i].endTime < Date.now()) { // 如果已过期
-                    delete barrageLanes[i];
-                }
-            }
-        }, 8000); // 8秒后移除
+        }, 8000);
     } else {
-        // 历史弹幕随机定位在屏幕内，然后逐渐消失
         const randomX = Math.random() * (window.innerWidth - el.offsetWidth);
-        const randomY = Math.random() * (window.innerHeight * 0.7 - LANE_HEIGHT); // 限定在弹幕区域
+        const randomY = Math.random() * (window.innerHeight * 0.7 - LANE_HEIGHT);
         el.style.left = `${randomX}px`;
         el.style.top = `${randomY}px`;
         el.style.opacity = '0.9';
-        el.style.transform = 'scale(1)';
-
-        setTimeout(() => {
-            el.style.transition = 'opacity 1.5s ease-out';
-            el.style.opacity = '0';
-        }, 3000 + Math.random() * 2000); // 3-5秒后开始淡出
-
-        setTimeout(() => {
-            if (el && el.parentNode) el.parentNode.removeChild(el);
-        }, 5000 + Math.random() * 2000); // 5-7秒后完全移除
+        setTimeout(() => { el.style.transition = 'opacity 1.5s ease-out'; el.style.opacity = '0'; }, 3000);
+        setTimeout(() => { if (el && el.parentNode) el.parentNode.removeChild(el); }, 5000);
     }
   }
 
-  // --- 网络逻辑：GET Counter ---
+  // --- 网络逻辑 ---
   async function fetchTotalCount() {
     try {
       const response = await fetch(COUNTER_API_ENDPOINT);
-      if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
       const data = await response.json();
       if (data && typeof data.total === 'number') {
         total = data.total;
         updateCounterDisplay();
-      } else {
-        console.warn('Received invalid data from fetchTotalCount:', data);
       }
-    } catch (error) {
-      console.error("Error fetching total count:", error);
-    }
+    } catch (error) { console.error("Error fetching total count:", error); }
   }
   
-  // --- 网络逻辑：POST Counter ---
   async function syncLocalClicks() {
-    if (localClickBuffer === 0 || isSyncing) {
-      return;
-    }
+    if (localClickBuffer === 0 || isSyncing) return;
     isSyncing = true;
-    
     const clicksToSend = Math.min(localClickBuffer, MAX_CLICKS_PER_SYNC);
-    localClickBuffer = 0; // 清空缓冲区
-
+    localClickBuffer = 0;
     try {
-      const response = await fetch(COUNTER_API_ENDPOINT, {
+      await fetch(COUNTER_API_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ incrementBy: clicksToSend })
       });
-      if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
-      const data = await response.json();
-      if (data && typeof data.total === 'number') {
-        total = data.total + localClickBuffer; // localClickBuffer此时应为0，但为了稳健性保留
-        updateCounterDisplay();
-      } else {
-        console.warn('Received invalid data from syncLocalClicks:', data);
-        localClickBuffer += clicksToSend;
-      }
     } catch (error) {
       console.error("Error syncing clicks:", error);
       localClickBuffer += clicksToSend;
@@ -354,157 +295,114 @@
     }
   }
 
-  // --- 新增：网络逻辑：POST Message ---
   async function sendMessage(message) {
-    if (!message.trim()) return; // 空消息不发送
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) return;
+
+    // 问题 2: 发送前，将消息加入去重列表，并在5秒后移除
+    recentlySentMessages.add(trimmedMessage);
+    setTimeout(() => recentlySentMessages.delete(trimmedMessage), 5000);
+
+    createBarrage(trimmedMessage); // 立即在本地显示
+    messageInput.value = '';
+    checkMessageInput();
 
     try {
-      sendMessageBtn.disabled = true; // 禁用发送按钮
-      const response = await fetch(MESSAGES_API_ENDPOINT, {
+      sendMessageBtn.disabled = true;
+      await fetch(MESSAGES_API_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: message })
+        body: JSON.stringify({ message: trimmedMessage })
       });
-      if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
-      
-      const data = await response.json();
-      if (data.success) {
-        console.log("Message sent:", message);
-        messageInput.value = ''; // 清空输入框
-        // 立即在本地显示自己发送的弹幕
-        createBarrage(message); 
-      } else {
-        console.warn('Failed to send message:', data);
-        alert('发送弹幕失败，请稍后再试。');
-      }
     } catch (error) {
       console.error("Error sending message:", error);
-      alert('发送弹幕失败：网络错误。');
     } finally {
-      sendMessageBtn.disabled = false; // 重新启用发送按钮
-      checkMessageInput(); // 检查输入框内容以再次判断是否禁用
+      checkMessageInput();
     }
   }
 
-  // --- 新增：网络逻辑：GET Messages (用于历史和实时拉取) ---
   async function fetchMessages(sinceTimestamp = 0) {
     try {
-      const url = new URL(MESSAGES_API_ENDPOINT, window.location.origin);
-      url.searchParams.append('since', sinceTimestamp);
-      
-      const response = await fetch(url.toString());
-      if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
-      
+      const response = await fetch(`${MESSAGES_API_ENDPOINT}?since=${sinceTimestamp}`);
       const data = await response.json();
       if (data && Array.isArray(data.messages)) {
-        // 按时间排序，确保新弹幕在后
-        data.messages.sort((a, b) => a.timestamp - b.timestamp);
-
         data.messages.forEach(msg => {
-          // 只有当消息时间戳比我们记录的最新时间戳新时才显示，防止重复
           if (msg.timestamp > lastMessageTimestamp) {
-            createBarrage(msg.message);
-            lastMessageTimestamp = msg.timestamp; // 更新最后一条弹幕时间戳
+            // 问题 2: 显示前检查是否是自己刚发送的
+            if (!recentlySentMessages.has(msg.message)) {
+              createBarrage(msg.message, true); // 此处第二个参数isRealtime应为true
+            }
+            lastMessageTimestamp = msg.timestamp;
           }
         });
-      } else {
-        console.warn('Received invalid data from fetchMessages:', data);
       }
-    } catch (error) {
-      console.error("Error fetching messages:", error);
-    }
+    } catch (error) { console.error("Error fetching messages:", error); }
   }
 
   // --- 事件处理 ---
   function handlePointer(evt) {
+    if (messageArea.contains(evt.target)) return;
+
     const now = Date.now();
     if (now - lastActivityTime < clickThrottleMs) return;
-    
     lastActivityTime = now;
 
     localClickBuffer++;
     total++;
     updateCounterDisplay();
 
-    let x, y;
-    if (evt.touches && evt.touches.length) {
-      x = evt.touches[0].clientX; y = evt.touches[0].clientY;
-    } else if (evt.clientX !== undefined) {
-      x = evt.clientX; y = evt.clientY;
-    } else { return; }
-    // 注意：这里的点击弹幕和用户发送的弹幕是分开的，
-    // 我们不需要将“傻逼+1”发送到后端作为弹幕。
-    // createBarrage(text, isRealtime) 的 isRealtime 默认为 true
-    const el = document.createElement('span'); // 创建一个新的span元素来显示点击反馈
-    el.className = 'barrage'; // 复用弹幕样式
+    const el = document.createElement('span');
+    el.className = 'barrage';
     el.textContent = '傻逼+1';
-    el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)]; // 随机颜色
-    
-    el.style.left = `${x}px`; // 从点击位置出现
-    el.style.top = `${y}px`;
-    el.style.transform = 'translateY(0) scale(1)';
+    el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
+    el.style.left = `${evt.clientX}px`;
+    el.style.top = `${evt.clientY}px`;
+    el.style.transform = 'translate(-50%, -50%) scale(1)';
     el.style.opacity = '1';
     document.body.appendChild(el);
     requestAnimationFrame(() => {
       const up = 60 + Math.random()*80;
-      const dx = (Math.random() - 0.5) * 120;
-      el.style.transition = 'transform 1200ms cubic-bezier(.22,.9,.35,1), opacity 1200ms ease-in';
-      el.style.transform = `translate(${dx}px, -${up}px) scale(1.08)`;
+      el.style.transition = 'transform 1.2s cubic-bezier(.22,.9,.35,1), opacity 1.2s ease-in';
+      el.style.transform = `translate(-50%, calc(-50% - ${up}px)) scale(1.08)`;
       el.style.opacity = '0';
     });
-    setTimeout(()=> {
-      if (el && el.parentNode) el.parentNode.removeChild(el);
-    }, 1400);
+    setTimeout(()=> { if (el && el.parentNode) el.parentNode.removeChild(el); }, 1400);
   }
 
-  // 新增：检查输入框内容，启用/禁用发送按钮
   function checkMessageInput() {
     sendMessageBtn.disabled = messageInput.value.trim().length === 0;
   }
 
-  // 新增：键盘回车事件监听
   function handleInputKeydown(event) {
     if (event.key === 'Enter' && !sendMessageBtn.disabled) {
       sendMessage(messageInput.value);
     }
   }
 
-  // --- 主同步循环 ---
   async function masterSyncLoop() {
-    if (isSyncing) {
-      return;
-    }
-
-    const now = Date.now();
-    const isUserActive = (now - lastActivityTime) < INACTIVITY_THRESHOLD_MS;
-    
+    if (isSyncing) return;
+    const isUserActive = (Date.now() - lastActivityTime) < INACTIVITY_THRESHOLD_MS;
     if (localClickBuffer > 0) {
       await syncLocalClicks();
-    } 
-    else if (!isUserActive) {
+    } else if (!isUserActive) {
       await fetchTotalCount();
     }
   }
 
   // --- 初始化 ---
   function initialize() {
-    // 初始化计数器
     fetchTotalCount();
     setInterval(masterSyncLoop, SYNC_INTERVAL_MS);
-    document.addEventListener('pointerdown', handlePointer, {passive: true});
+    document.body.addEventListener('pointerdown', handlePointer, {passive: true});
 
-    // --- 新增：弹幕相关初始化 ---
-    // 第一次加载时获取过去30秒的弹幕
-    lastMessageTimestamp = Date.now() - (BARRAGE_HISTORY_SECONDS * 1000); // 设置初始时间戳为30秒前
+    lastMessageTimestamp = Date.now() - (BARRAGE_HISTORY_SECONDS * 1000);
     fetchMessages(lastMessageTimestamp);
-    // 实时轮询获取新弹幕
     setInterval(() => fetchMessages(lastMessageTimestamp), BARRAGE_REFRESH_INTERVAL_MS);
 
-    // 弹幕输入框事件
     messageInput.addEventListener('input', checkMessageInput);
     sendMessageBtn.addEventListener('click', () => sendMessage(messageInput.value));
     messageInput.addEventListener('keydown', handleInputKeydown);
-    checkMessageInput(); // 初始检查
+    checkMessageInput();
   }
   
   initialize();
