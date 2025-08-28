@@ -35,9 +35,9 @@ export default async function handler(req, res) {
 
       // --- 关键修改：服务器端验证 START ---
       
-      // 1. 验证类型是否为正数
-      if (typeof incrementBy !== 'number' || incrementBy <= 0) {
-        return res.status(400).json({ error: 'Invalid increment value.' });
+      // 1. 验证类型是否为正整数
+      if (typeof incrementBy !== 'number' || !Number.isInteger(incrementBy) || incrementBy <= 0) {
+        return res.status(400).json({ error: 'Invalid increment value. Must be a positive integer.' });
       }
 
       // 2. 强制将传入值限制在我们的上限之内
