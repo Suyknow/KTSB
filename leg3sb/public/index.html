@@ -87,13 +87,13 @@
   }
 
   .barrage.type-click {
+    /* 这个背景色是备用，实际颜色由JS随机指定 */
     background: rgba(0,0,0,0.45);
     color: #fff;
     text-shadow: 0 2px 6px rgba(0,0,0,0.6);
     z-index: 11;
   }
   
-  /* 历史弹幕和他人实时弹幕的样式 */
   .barrage.type-history,
   .barrage.type-realtime {
     background: transparent;
@@ -102,15 +102,13 @@
     text-shadow: 0 1px 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.8);
   }
 
-  /* 新增：用户自己发送的弹幕的高亮样式 */
   .barrage.type-user-sent {
     background: transparent;
     color: #fff;
-    font-size: 22px; /* 字体稍大 */
-    font-weight: 900; /* 字体更粗 */
-    /* 金色高亮描边效果 */
+    font-size: 22px;
+    font-weight: 900;
     text-shadow: 0 0 8px #ffef3a, 0 0 4px #ffef3a, 0 1px 4px rgba(0,0,0,0.8);
-    z-index: 99; /* 确保在最顶层 */
+    z-index: 99;
   }
 
   .counter {
@@ -191,8 +189,8 @@
   // --- 配置 ---
   const COUNTER_API_ENDPOINT = '/api/counter';
   const MESSAGES_API_ENDPOINT = '/api/messages';
-  const INITIAL_BARRAGE_COUNT = 200; // 初次加载的弹幕数量
-  const INITIAL_ANIMATION_DURATION = 10000; // 10秒内加载完
+  const INITIAL_BARRAGE_COUNT = 200;
+  const INITIAL_ANIMATION_DURATION = 10000;
   const BARRAGE_REFRESH_INTERVAL_MS = 2500;
   const SYNC_INTERVAL_MS = 1000;
 
@@ -210,7 +208,6 @@
 
   // --- 弹幕函数 ---
 
-  // 创建飞行弹幕（适用于历史、实时和用户发送的弹幕）
   function createFlyingBarrage(text, type = 'realtime') {
     const el = document.createElement('span');
     el.className = `barrage type-${type}`;
@@ -234,12 +231,15 @@
     }, duration);
   }
 
-  // 创建点击反馈弹幕（第一版原始逻辑）
   function createClickBarrage(x, y, text) {
     const el = document.createElement('span');
     el.className = 'barrage type-click';
     el.textContent = text;
+    
+    // --- 关键修复：恢复随机彩色背景 ---
+    // 这行代码是恢复您喜欢的样式的关键
     el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
+    
     const pad = 8, w = window.innerWidth, h = window.innerHeight;
     el.style.left = `${Math.max(pad, Math.min(w - pad - 100, x))}px`;
     el.style.top  = `${Math.max(pad, Math.min(h - pad - 20, y))}px`;
@@ -260,7 +260,6 @@
 
   // --- 网络与逻辑 ---
 
-  // 新增：执行初次加载弹幕的动画序列
   async function runInitialBarrageSequence() {
     try {
       const response = await fetch(`${MESSAGES_API_ENDPOINT}?limit=${INITIAL_BARRAGE_COUNT}`);
@@ -276,11 +275,11 @@
       const startTime = Date.now();
 
       function playNext() {
-        if (Date.now() - startTime > INITIAL_ANIMATION_DURATION) return; // 10秒后停止
+        if (Date.now() - startTime > INITIAL_ANIMATION_DURATION) return;
 
         let burstSize = 1;
         if (messages.length > 50) {
-          burstSize = 1 + Math.floor(Math.random() * 3); // 1-3条的随机爆发量
+          burstSize = 1 + Math.floor(Math.random() * 3);
         }
 
         for (let i = 0; i < burstSize && currentIndex < messages.length; i++) {
@@ -289,12 +288,11 @@
         }
 
         if (currentIndex < messages.length) {
-          // 动态计算下一次的随机延时
           const timeElapsed = Date.now() - startTime;
           const timeRemaining = INITIAL_ANIMATION_DURATION - timeElapsed;
           const messagesRemaining = messages.length - currentIndex;
           const avgDelay = timeRemaining / messagesRemaining;
-          const randomDelay = avgDelay * (0.5 + Math.random()); // 在平均延时附近随机
+          const randomDelay = avgDelay * (0.5 + Math.random());
           setTimeout(playNext, randomDelay);
         }
       }
@@ -312,7 +310,6 @@
       recentlySentMessages.add(trimmedMessage);
       setTimeout(() => recentlySentMessages.delete(trimmedMessage), 5000);
 
-      // 调用飞行弹幕，并使用 "user-sent" 类型使其高亮
       createFlyingBarrage(trimmedMessage, 'user-sent');
       messageInput.value = '';
       checkMessageInput();
@@ -326,7 +323,6 @@
       } catch (error) { console.error("Error sending message:", error); }
   }
 
-  // 实时轮询获取新弹幕
   async function fetchNewMessages() {
       try {
           const response = await fetch(`${MESSAGES_API_ENDPOINT}?since=${lastMessageTimestamp}`);
@@ -344,7 +340,6 @@
       } catch (error) { console.error("Error fetching new messages:", error); }
   }
   
-  // 处理屏幕点击
   function handlePointer(evt) {
     if (messageArea.contains(evt.target)) return;
     localClickBuffer++;
@@ -363,7 +358,6 @@
     }
   }
 
-  // 同步总数 (简化版)
   async function syncCounter() { 
     if (localClickBuffer > 0) {
       const clicksToSend = localClickBuffer;
@@ -376,7 +370,6 @@
         });
       } catch (e) { localClickBuffer += clicksToSend; }
     }
-    // 定期获取最新总数
     try {
       const response = await fetch(COUNTER_API_ENDPOINT);
       const data = await response.json(); 
@@ -387,22 +380,17 @@
     } catch(e) { /* no-op */ }
   }
 
-  // --- 初始化 ---
   function initialize() {
-    // 计数器逻辑
     syncCounter();
     setInterval(syncCounter, SYNC_INTERVAL_MS);
     document.body.addEventListener('pointerdown', handlePointer, {passive: true});
 
-    // 弹幕逻辑
-    runInitialBarrageSequence(); // 启动初次加载动画
-    // 注意：实时轮询现在使用新的函数名，并且在页面加载后立即开始
+    runInitialBarrageSequence();
     setTimeout(() => {
         fetchNewMessages();
         setInterval(fetchNewMessages, BARRAGE_REFRESH_INTERVAL_MS);
-    }, 1000); // 1秒后开始第一次实时轮询
+    }, 1000);
 
-    // 输入框逻辑
     messageInput.addEventListener('input', checkMessageInput);
     sendMessageBtn.addEventListener('click', () => sendMessage(messageInput.value));
     messageInput.addEventListener('keydown', handleInputKeydown);
