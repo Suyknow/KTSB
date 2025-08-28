@@ -212,23 +212,38 @@
   const sendMessageBtn = document.getElementById('sendMessageBtn');
   const bgColors = ['rgba(0,0,0,0.45)', 'rgba(32,140,190,0.9)', 'rgba(255,69,0,0.85)'];
 
-  // --- 弹幕相关函数 ---
+  // --- 弹幕函数 ---
 
   function createFlyingBarrage(text, type = 'realtime') {
     const el = document.createElement('span');
     el.className = `barrage type-${type}`;
     el.textContent = text;
     document.body.appendChild(el);
-    const duration = 12000 + Math.random() * 5000;
+
+    // --- 速度参数 ---
+    // 基础时长设为12-17秒
+    let duration = 12000 + Math.random() * 5000;
+    
+    // --- 移动端速度优化 ---
+    // 通过判断屏幕宽度，如果是手机（宽度小于768px），则将动画时长减半，速度加倍
+    if (window.innerWidth < 768) {
+      duration /= 2;
+    }
+
     const top = Math.random() * (window.innerHeight * 0.7);
+
     el.style.top = `${top}px`;
     el.style.left = '100vw'; 
     el.style.transform = 'translateX(0)';
+
     requestAnimationFrame(() => {
         el.style.transition = `transform ${duration}ms linear`;
         el.style.transform = `translateX(calc(-100vw - 100%))`;
     });
-    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, duration);
+
+    setTimeout(() => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+    }, duration);
   }
 
   function createClickBarrage(x, y, text) {
@@ -249,7 +264,9 @@
       el.style.transform = `translate(${dx}px, -${up}px) scale(1.08)`;
       el.style.opacity = '0';
     });
-    setTimeout(()=> { if (el && el.parentNode) el.parentNode.removeChild(el); }, 1400);
+    setTimeout(()=> {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }, 1400);
   }
 
   async function runInitialBarrageSequence() {
@@ -318,7 +335,7 @@
   function checkMessageInput() { sendMessageBtn.disabled = messageInput.value.trim().length === 0; }
   function handleInputKeydown(event) { if (event.key === 'Enter' && !sendMessageBtn.disabled) sendMessage(messageInput.value); }
 
-  // --- 计数器相关函数 (恢复到第一版稳定逻辑) ---
+  // --- 计数器相关函数 ---
   
   function updateCounterDisplay() {
     if (typeof total === 'number' && !isNaN(total)) {
@@ -382,19 +399,19 @@
 
   // --- 初始化 ---
   function initialize() {
-    // 初始化计数器 (第一版逻辑)
+    // 初始化计数器
     fetchTotalCount();
     setInterval(syncOrFetch, SYNC_INTERVAL_MS);
     document.body.addEventListener('pointerdown', handlePointer, {passive: true});
 
-    // 初始化弹幕 (新功能)
+    // 初始化弹幕
     runInitialBarrageSequence();
     setTimeout(() => {
         fetchNewMessages();
         setInterval(fetchNewMessages, BARRAGE_REFRESH_INTERVAL_MS);
     }, 1000);
 
-    // 初始化输入框 (新功能)
+    // 初始化输入框
     messageInput.addEventListener('input', checkMessageInput);
     sendMessageBtn.addEventListener('click', () => sendMessage(messageInput.value));
     messageInput.addEventListener('keydown', handleInputKeydown);
