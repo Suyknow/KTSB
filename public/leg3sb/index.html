@@ -22,12 +22,7 @@
     justify-content: center;
   }
 
-  .overlay {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(rgba(0,0,0,0.12), rgba(0,0,0,0.22));
-    pointer-events: none;
-  }
+  .overlay { position: absolute; inset: 0; background: linear-gradient(rgba(0,0,0,0.12), rgba(0,0,0,0.22)); }
 
   .container {
     position: relative;
@@ -63,7 +58,6 @@
     opacity: 0.9;
   }
 
-  /* 弹幕样式 */
   .barrage {
     position: absolute;
     z-index: 9999;
@@ -80,7 +74,6 @@
     text-shadow: 0 2px 6px rgba(0,0,0,0.6);
   }
 
-  /* 计数器 */
   .counter {
     position: fixed;
     top: 12px;
@@ -104,20 +97,26 @@
 </head>
 <body>
   <div class="overlay" aria-hidden="true"></div>
-
   <div class="container" role="main" aria-live="polite">
     <h1>腿三傻逼！</h1>
     <p class="subtitle">我们都有一个共同的朋友，他叫腿三，很不幸，也很幸运地，他是个傻逼。</p>
     <div class="hint">👏点击屏幕为腿三喝彩👏</div>
   </div>
 
-  <!-- 右上角计数器 -->
   <div class="counter" id="counter">总傻逼 +0</div>
+
+  <!-- LeanCloud SDK -->
+  <script src="https://unpkg.com/leancloud-storage@4.15.0/dist/av-min.js"></script>
 
 <script>
 (function(){
-  let lastTime = 0;
-  let total = 0;
+  const appId = "JV7lh7XZKr5joA7g0X2LuGR7-gzGzoHsz";
+  const appKey = "oYpUIPHGrcdHz6Ysqwa7uDV1";
+  const serverURL = "https://JV7lh7XZKr5joA7g0X2LuGR7-gzGzoHsz.cn1.avoscloud.com";
+  const objectId = "68b009202f7ee809fcbaea42";
+
+  AV.init({ appId, appKey, serverURL });
+
   const counterEl = document.getElementById('counter');
 
   const bgColors = [
@@ -128,21 +127,15 @@
     'rgba(0,128,0,0.7)'
   ];
 
-  function updateCounter() {
-    counterEl.textContent = `总傻逼 +${total}`;
-  }
-
+  // 弹幕动画
   function createBarrage(x, y, text) {
-    total++;
-    updateCounter();
-
     const el = document.createElement('span');
     el.className = 'barrage';
     el.textContent = text;
     el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
     const pad = 8;
-    const w = Math.min(window.innerWidth, document.documentElement.clientWidth);
-    const h = Math.min(window.innerHeight, document.documentElement.clientHeight);
+    const w = window.innerWidth;
+    const h = window.innerHeight;
     el.style.left = Math.max(pad, Math.min(w - pad - 100, x)) + 'px';
     el.style.top  = Math.max(pad, Math.min(h - pad - 20, y)) + 'px';
     el.style.transform = 'translateY(0) scale(1)';
@@ -157,32 +150,52 @@
       el.style.opacity = '0';
     });
 
-    setTimeout(()=> {
-      if (el && el.parentNode) el.parentNode.removeChild(el);
-    }, 1400);
+    setTimeout(()=> { if(el.parentNode) el.parentNode.removeChild(el); }, 1400);
   }
 
-  function handlePointer(evt) {
-    const now = Date.now();
-    if (now - lastTime < 20) return;
-    lastTime = now;
-    let x, y;
-    if (evt.touches && evt.touches.length) {
-      x = evt.touches[0].clientX;
-      y = evt.touches[0].clientY;
-    } else if (evt.clientX !== undefined) {
-      x = evt.clientX;
-      y = evt.clientY;
-    } else {
-      return;
+  // 获取计数
+  async function getCounter() {
+    try {
+      const counter = AV.Object.createWithoutData('Counter', objectId);
+      await counter.fetch();
+      const total = counter.get('total') || 0;
+      counterEl.textContent = `总傻逼 +${total}`;
+      return total;
+    } catch(err) {
+      console.error("读取计数失败", err);
+      return 0;
     }
-    createBarrage(x, y, '傻逼+1');
   }
 
-  document.addEventListener('pointerdown', handlePointer, {passive: true});
-  document.addEventListener('touchstart', handlePointer, {passive: true});
-  document.addEventListener('mousedown', handlePointer, {passive: true});
+  // 点击 +1
+  async function addOne(x, y) {
+    try {
+      const counter = AV.Object.createWithoutData('Counter', objectId);
+      await counter.fetch();
+      let total = counter.get('total') || 0;
+      total++;
+      counter.set('total', total);
+      await counter.save();
+      createBarrage(x, y, '傻逼+1');
+      // 计数器由轮询自动更新，无需手动更新
+    } catch(err) {
+      console.error("更新计数失败", err);
+    }
+  }
+
+  // 点击事件
+  document.addEventListener('pointerdown', evt => {
+    let x = evt.clientX;
+    let y = evt.clientY;
+    addOne(x, y);
+  }, {passive:true});
+
+  // 初始化计数并轮询刷新
+  getCounter();
+  setInterval(getCounter, 1000);  // 每秒刷新一次
+
 })();
 </script>
+
 </body>
 </html>
