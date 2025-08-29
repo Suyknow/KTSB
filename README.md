@@ -4,6 +4,8 @@
 
 一个简单的网页，允许用户通过点击和发送弹幕进行互动。
 
+项目Demo地址：[http://leg3sb.ktsb.org](http://leg3sb.ktsb.org)
+
 ### 部署
 
 本项目可以轻松地通过 [Vercel](https://vercel.com) 进行部署，并使用 [MongoDB](https://www.mongodb.com) 作为数据库来存储计数和弹幕消息。
