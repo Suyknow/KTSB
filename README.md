@@ -4,7 +4,7 @@
 
 一个简单的网页，允许用户通过点击和发送弹幕进行互动。
 
-项目Demo地址：[http://leg3sb.ktsb.org](http://leg3sb.ktsb.org)
+项目Demo地址：[https://leg3sb.ktsb.org](https://leg3sb.ktsb.org)
 
 ### 部署
 
