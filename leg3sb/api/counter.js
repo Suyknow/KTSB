@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { incrementBy, deviceId } = req.body;
+      const { incrementBy, deviceId } = req.body ?? {};
 
       if (!deviceId || typeof deviceId !== 'string') {
         return res.status(400).json({ error: 'Device identifier is required.' });

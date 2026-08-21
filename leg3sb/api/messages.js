@@ -27,7 +27,7 @@ export default async (req, res) => {
     await ensureIndexes(collection);
 
     if (req.method === 'POST') {
-      const { message, deviceId } = req.body;
+      const { message, deviceId } = req.body ?? {};
 
       if (!deviceId || typeof deviceId !== 'string') {
         return res.status(400).json({ success: false, error: 'Device identifier is required.' });
@@ -67,7 +67,7 @@ export default async (req, res) => {
 
       // 提供 limit 时获取最新的 N 条，反转后按时间正序返回
       if (limit) {
-        const numLimit = parseInt(limit, 10) || 200;
+        const numLimit = Math.min(Math.max(parseInt(limit, 10) || 200, 1), 200);
         messages = await collection
           .find()
           .sort({ timestamp: -1 })

@@ -29,16 +29,26 @@ async function checkRateLimit(deviceId, field, minIntervalMs) {
   const collection = db.collection(RATE_LIMIT_COLLECTION);
   await ensureTTLIndex(collection);
   const now = Date.now();
-  const doc = await collection.findOne({ _id: deviceId }, { projection: { _id: 0, [field]: 1 } });
-  if (doc && typeof doc[field] === 'number' && now - doc[field] < minIntervalMs) {
-    return { allowed: false };
-  }
-  await collection.updateOne(
-    { _id: deviceId },
-    { $set: { [field]: now, lastSeen: new Date(now) } },
-    { upsert: true }
+  // 记录已存在：仅当间隔已过时才原子地更新并放行
+  const result = await collection.updateOne(
+    {
+      _id: deviceId,
+      $or: [{ [field]: { $exists: false } }, { [field]: { $lte: now - minIntervalMs } }],
+    },
+    { $set: { [field]: now, lastSeen: new Date(now) } }
   );
-  return { allowed: true };
+  if (result.matchedCount === 1) {
+    return { allowed: true };
+  }
+  // 无匹配：可能是首次请求（记录不存在），也可能是间隔未到。
+  // 尝试插入以区分两者；并发冲突（E11000）说明记录已存在 → 拒绝。
+  try {
+    await collection.insertOne({ _id: deviceId, [field]: now, lastSeen: new Date(now) });
+    return { allowed: true };
+  } catch (error) {
+    if (error.code !== 11000) throw error;
+  }
+  return { allowed: false };
 }
 
 export function checkClickRateLimit(deviceId) {
