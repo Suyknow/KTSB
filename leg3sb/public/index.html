@@ -9,7 +9,8 @@
 <title>腿三傻逼！</title>
 <style>
   html, body {
-    overflow-x: hidden;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
   
   * {box-sizing: border-box; margin: 0; padding: 0;}
@@ -21,9 +22,9 @@
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    position: relative;
+    position: fixed;
+    inset: 0;
     color: #fff;
-    min-height: 100dvh;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -241,6 +242,16 @@
   const sendMessageBtn = document.getElementById('sendMessageBtn');
   const bgColors = ['rgba(0,0,0,0.45)', 'rgba(32,140,190,0.9)', 'rgba(255,69,0,0.85)'];
 
+  function getVisibleHeight() {
+    return window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  }
+  function syncInputBarToViewport() {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const keyboard = window.innerHeight - vv.height - vv.offsetTop;
+    messageArea.style.bottom = Math.max(0, keyboard) + 'px';
+  }
+
   // --- 弹幕函数 ---
   function createFlyingBarrage(text, type = 'realtime') {
     const el = document.createElement('span');
@@ -251,7 +262,7 @@
     if (window.innerWidth < 768) {
       duration /= 2;
     }
-    const top = Math.random() * (window.innerHeight * 0.7);
+    const top = Math.random() * (getVisibleHeight() * 0.7);
     el.style.top = `${top}px`;
     el.style.left = '100vw'; 
     el.style.transform = 'translateX(0)';
@@ -267,7 +278,7 @@
     el.className = 'barrage type-click';
     el.textContent = text;
     el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
-    const pad = 8, w = window.innerWidth, h = window.innerHeight;
+    const pad = 8, w = window.innerWidth, h = getVisibleHeight();
     el.style.left = `${Math.max(pad, Math.min(w - pad - 100, x))}px`;
     el.style.top  = `${Math.max(pad, Math.min(h - pad - 20, y))}px`;
     el.style.transform = 'translateY(0) scale(1)';
@@ -492,6 +503,13 @@
     startPolling();
     document.body.addEventListener('pointerdown', handlePointer, {passive: true});
     document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', syncInputBarToViewport);
+      window.visualViewport.addEventListener('scroll', syncInputBarToViewport);
+    }
+    window.addEventListener('resize', syncInputBarToViewport);
+    syncInputBarToViewport();
 
     // 初始化弹幕（完成后置 initialBarrageReady，自动开启增量轮询）
     runInitialBarrageSequence();
