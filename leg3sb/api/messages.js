@@ -1,76 +1,71 @@
-import { MongoClient } from 'mongodb';
+import { getDb } from './_lib/mongo.js';
 
-const MONGODB_URI = process.env.MONGODB_URI;
-// 请确保这里的数据库名与您的设置一致
-const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'counter_db'; 
+const MAX_MESSAGES = 1000;
+const MAX_MESSAGE_LENGTH = 140;
 
-let cachedDb = null;
+let indexesEnsured = false;
 
-async function connectToDatabase() {
-  if (cachedDb) return cachedDb;
-
-  if (!MONGODB_URI) {
-    throw new Error('Please define the MONGODB_URI environment variable');
+async function ensureIndexes(collection) {
+  if (indexesEnsured) return;
+  try {
+    await collection.createIndex({ timestamp: 1 });
+  } catch (error) {
+    console.error('[API_MESSAGES_INDEX_ERROR]', error);
   }
-
-  const client = await MongoClient.connect(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  });
-
-  const db = client.db(MONGODB_DB_NAME);
-  cachedDb = db;
-  return db;
+  indexesEnsured = true;
 }
 
 export default async (req, res) => {
-  // --- CORS Headers ---
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') {
-    return res.status(200).send();
+    return res.status(200).end();
   }
-  // --- End CORS ---
 
-  const db = await connectToDatabase();
-  const collection = db.collection('messages');
+  try {
+    const db = await getDb();
+    const collection = db.collection('messages');
+    await ensureIndexes(collection);
 
-  if (req.method === 'POST') {
-    try {
+    if (req.method === 'POST') {
       const { message } = req.body;
-      if (!message || typeof message !== 'string' || message.trim().length === 0) {
+
+      if (typeof message !== 'string') {
         return res.status(400).json({ success: false, error: 'Message content is required.' });
       }
-      const MAX_MESSAGE_LENGTH = 50; 
+
       const trimmedMessage = message.substring(0, MAX_MESSAGE_LENGTH).trim();
+      if (!trimmedMessage) {
+        return res.status(400).json({ success: false, error: 'Message content is required.' });
+      }
 
       await collection.insertOne({
         message: trimmedMessage,
         timestamp: Date.now(),
       });
-      res.status(201).json({ success: true });
-    } catch (error) {
-      console.error('[API_MESSAGES_POST_ERROR]', error);
-      res.status(500).json({ success: false, error: 'Internal Server Error' });
+
+      // 只保留最近 MAX_MESSAGES 条：超出时删除最旧的一条
+      const count = await collection.countDocuments();
+      if (count > MAX_MESSAGES) {
+        await collection.findOneAndDelete({}, { sort: { timestamp: 1 } });
+      }
+
+      return res.status(201).json({ success: true });
     }
-  } else if (req.method === 'GET') {
-    try {
+
+    if (req.method === 'GET') {
       const { since, limit } = req.query;
       let messages;
 
-      // 如果提供了limit参数，则获取最新的N条
+      // 提供 limit 时获取最新的 N 条，反转后按时间正序返回
       if (limit) {
-        const numLimit = parseInt(limit, 10) || 200; // 默认200
+        const numLimit = parseInt(limit, 10) || 200;
         messages = await collection
           .find()
-          .sort({ timestamp: -1 }) // 按时间倒序，获取最新的
+          .sort({ timestamp: -1 })
           .limit(numLimit)
           .toArray();
-        messages.reverse(); // 再反转回来，确保前端接收到的是时间正序
-      } 
-      // 否则，使用旧的since逻辑，用于实时轮询
-      else {
+        messages.reverse();
+      } else {
+        // 否则使用 since 增量轮询：返回比 since 更新的消息
         const sinceTimestamp = parseInt(since || '0', 10);
         messages = await collection
           .find({ timestamp: { $gt: sinceTimestamp } })
@@ -79,13 +74,12 @@ export default async (req, res) => {
           .toArray();
       }
 
-      res.status(200).json({ messages });
-
-    } catch (error) {
-      console.error('[API_MESSAGES_GET_ERROR]', error);
-      res.status(500).json({ error: 'Internal Server Error' });
+      return res.status(200).json({ messages });
     }
-  } else {
-    res.status(405).json({ error: 'Method Not Allowed' });
+
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  } catch (error) {
+    console.error('[API_MESSAGES_ERROR]', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 };

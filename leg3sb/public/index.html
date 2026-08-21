@@ -124,6 +124,7 @@
     font-weight: bold;
     color: #ffef3a;
     text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    font-variant-numeric: tabular-nums;
     z-index: 10000;
   }
 
@@ -182,7 +183,7 @@
   </div>
   <div class="counter" id="counter">总傻逼 +0</div>
   <div class="message-input-area" id="messageArea">
-    <input type="text" id="messageInput" placeholder="发个弹幕吧～" maxlength="50" />
+    <input type="text" id="messageInput" placeholder="发个弹幕吧～" maxlength="140" />
     <button id="sendMessageBtn" disabled>发送</button>
   </div>
 
@@ -201,12 +202,23 @@
   const BARRAGE_REFRESH_INTERVAL_MS = 2500;
 
   // --- 状态变量 ---
-  let total = 0;
+  // 计数器三池模型：confirmedTotal（服务端已确认）+ inFlight（已发送未返回）
+  // + localClickBuffer（未发送）。一次点击始终计入显示池，直到服务端确认，
+  // 因此 sync 期间数字不会回退。displayedValue 用指数趋近补间平滑滚动。
+  let confirmedTotal = 0;
+  let inFlight = 0;
   let localClickBuffer = 0;
   let isSyncing = false;
   let lastClickTime = 0;
+  let displayedValue = null; // 首次拿到服务端总数前为 null
+  let rafId = null;
+  const TWEEN_K = 0.2; // 每帧趋近比例，约 250ms 基本到位
   let lastMessageTimestamp = 0;
+  let initialBarrageReady = false;
   const recentlySentMessages = new Set();
+
+  let syncIntervalId = null;
+  let messageIntervalId = null;
 
   const counterEl = document.getElementById('counter');
   const messageArea = document.getElementById('messageArea');
@@ -283,7 +295,11 @@
         }
       }
       playNext();
-    } catch(error) { console.error("Failed to fetch initial barrages:", error); }
+    } catch(error) {
+      console.error("Failed to fetch initial barrages:", error);
+    } finally {
+      initialBarrageReady = true;
+    }
   }
 
   async function sendMessage(message) {
@@ -304,6 +320,7 @@
   }
 
   async function fetchNewMessages() {
+      if (!initialBarrageReady) return; // 等初始弹幕拉取完成后再开始增量轮询
       try {
           const response = await fetch(`${MESSAGES_API_ENDPOINT}?since=${lastMessageTimestamp}`);
           const data = await response.json();
@@ -324,19 +341,44 @@
   function handleInputKeydown(event) { if (event.key === 'Enter' && !sendMessageBtn.disabled) sendMessage(messageInput.value); }
 
   // --- 计数器相关函数 ---
-  function updateCounterDisplay() {
-    if (typeof total === 'number' && !isNaN(total)) {
-      counterEl.textContent = `总傻逼 +${Math.round(total)}`;
-    }
+  function renderCounter() {
+    counterEl.textContent = `总傻逼 +${Math.round(displayedValue)}`;
   }
-  
+
+  // 每帧把 displayedValue 指数趋近 target，到位后停止 rAF
+  function tweenTick() {
+    const target = confirmedTotal + inFlight + localClickBuffer;
+    const diff = target - displayedValue;
+    if (Math.abs(diff) < 0.5) {
+      displayedValue = target;
+      renderCounter();
+      rafId = null;
+      return;
+    }
+    displayedValue += diff * TWEEN_K;
+    renderCounter();
+    rafId = requestAnimationFrame(tweenTick);
+  }
+
+  // 目标值变化时触发补间（已初始化且没有 rAF 在跑时）
+  function updateCounterDisplay() {
+    if (displayedValue === null) return;
+    if (rafId === null) rafId = requestAnimationFrame(tweenTick);
+  }
+
   async function fetchTotalCount() {
     try {
       const response = await fetch(COUNTER_API_ENDPOINT);
       const data = await response.json();
-      if (data && typeof data.total === 'number' && localClickBuffer === 0) {
-        total = data.total;
-        updateCounterDisplay();
+      if (data && typeof data.total === 'number') {
+        confirmedTotal = data.total;
+        if (displayedValue === null) {
+          // 首次拿到服务端总数，直接落位，不补间
+          displayedValue = confirmedTotal;
+          renderCounter();
+        } else {
+          updateCounterDisplay();
+        }
       }
     } catch (error) { console.error("Error fetching total count:", error); }
   }
@@ -345,7 +387,9 @@
     if (localClickBuffer === 0 || isSyncing) return;
     isSyncing = true;
     const clicksToSend = Math.min(localClickBuffer, MAX_CLICKS_PER_SYNC);
+    // 待提交 → 已发送未返回；显示池总数不变，数字不会回退
     localClickBuffer -= clicksToSend;
+    inFlight += clicksToSend;
     try {
       const response = await fetch(COUNTER_API_ENDPOINT, {
         method: 'POST',
@@ -354,13 +398,22 @@
       });
       const data = await response.json();
       if (data && typeof data.total === 'number') {
-        total = data.total;
-        updateCounterDisplay();
-      } else { localClickBuffer += clicksToSend; }
-    } catch (error) { 
-        console.error("Error syncing clicks:", error);
-        localClickBuffer += clicksToSend;
-    } finally { isSyncing = false; }
+        // 服务端确认：confirmedTotal 跃升恰为 inFlight 的量，显示池总数不变
+        confirmedTotal = data.total;
+        inFlight = 0;
+      } else {
+        // 未确认，inFlight 退回待提交
+        localClickBuffer += inFlight;
+        inFlight = 0;
+      }
+    } catch (error) {
+      console.error("Error syncing clicks:", error);
+      localClickBuffer += inFlight;
+      inFlight = 0;
+    } finally {
+      isSyncing = false;
+      updateCounterDisplay();
+    }
   }
 
   function handlePointer(evt) {
@@ -369,7 +422,6 @@
     if (now - lastClickTime < clickThrottleMs) return;
     lastClickTime = now;
     localClickBuffer++;
-    total++;
     updateCounterDisplay();
     createClickBarrage(evt.clientX, evt.clientY, '傻逼+1');
   }
@@ -383,19 +435,38 @@
     }
   }
 
+  // --- 后台暂停 / 恢复 ---
+  // 标签页隐藏时停止轮询，回到前台时立即刷新并恢复轮询，节省请求与数据库读。
+  function startPolling() {
+    if (!syncIntervalId) syncIntervalId = setInterval(syncOrFetch, SYNC_INTERVAL_MS);
+    if (!messageIntervalId) messageIntervalId = setInterval(fetchNewMessages, BARRAGE_REFRESH_INTERVAL_MS);
+  }
+
+  function stopPolling() {
+    if (syncIntervalId) { clearInterval(syncIntervalId); syncIntervalId = null; }
+    if (messageIntervalId) { clearInterval(messageIntervalId); messageIntervalId = null; }
+  }
+
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      stopPolling();
+    } else {
+      syncOrFetch();
+      fetchNewMessages();
+      startPolling();
+    }
+  }
+
   // --- 初始化 ---
   function initialize() {
     // 初始化计数器
     fetchTotalCount();
-    setInterval(syncOrFetch, SYNC_INTERVAL_MS);
+    startPolling();
     document.body.addEventListener('pointerdown', handlePointer, {passive: true});
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // 初始化弹幕
+    // 初始化弹幕（完成后置 initialBarrageReady，自动开启增量轮询）
     runInitialBarrageSequence();
-    setTimeout(() => {
-        fetchNewMessages();
-        setInterval(fetchNewMessages, BARRAGE_REFRESH_INTERVAL_MS);
-    }, 1000);
 
     // 初始化输入框
     messageInput.addEventListener('input', checkMessageInput);
