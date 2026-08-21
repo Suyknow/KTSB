@@ -1,4 +1,5 @@
 import { getDb } from './_lib/mongo.js';
+import { checkClickRateLimit } from './_lib/rateLimit.js';
 
 const MAX_INCREMENT_ALLOWED = 20;
 const COUNTER_ID = 'total_shabi_count';
@@ -19,10 +20,19 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { incrementBy } = req.body;
+      const { incrementBy, deviceId } = req.body;
+
+      if (!deviceId || typeof deviceId !== 'string') {
+        return res.status(400).json({ error: 'Device identifier is required.' });
+      }
 
       if (typeof incrementBy !== 'number' || !Number.isInteger(incrementBy) || incrementBy <= 0) {
         return res.status(400).json({ error: 'Invalid increment value. Must be a positive integer.' });
+      }
+
+      const rateLimit = await checkClickRateLimit(deviceId);
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ error: 'Too many click submissions. Please slow down.' });
       }
 
       const validatedIncrement = Math.min(incrementBy, MAX_INCREMENT_ALLOWED);

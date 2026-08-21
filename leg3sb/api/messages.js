@@ -1,4 +1,5 @@
 import { getDb } from './_lib/mongo.js';
+import { checkMessageRateLimit } from './_lib/rateLimit.js';
 
 const MAX_MESSAGES = 1000;
 const MAX_MESSAGE_LENGTH = 140;
@@ -26,7 +27,11 @@ export default async (req, res) => {
     await ensureIndexes(collection);
 
     if (req.method === 'POST') {
-      const { message } = req.body;
+      const { message, deviceId } = req.body;
+
+      if (!deviceId || typeof deviceId !== 'string') {
+        return res.status(400).json({ success: false, error: 'Device identifier is required.' });
+      }
 
       if (typeof message !== 'string') {
         return res.status(400).json({ success: false, error: 'Message content is required.' });
@@ -35,6 +40,11 @@ export default async (req, res) => {
       const trimmedMessage = [...message].slice(0, MAX_MESSAGE_LENGTH).join('').trim();
       if (!trimmedMessage) {
         return res.status(400).json({ success: false, error: 'Message content is required.' });
+      }
+
+      const rateLimit = await checkMessageRateLimit(deviceId);
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ success: false, error: 'Too many messages. Please wait a moment.' });
       }
 
       await collection.insertOne({

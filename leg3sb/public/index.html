@@ -200,6 +200,21 @@
   const INITIAL_BARRAGE_COUNT = 200; // 固定获取200条
   const INITIAL_ANIMATION_DURATION = 10000;
   const BARRAGE_REFRESH_INTERVAL_MS = 2500;
+  const MESSAGE_COOLDOWN_MS = 1000; // 客户端弹幕冷却，与服务端频次限制对齐
+
+  // --- 设备识别码 ---
+  // 用 localStorage 持久化一个随机设备 ID，作为服务端按设备节流的依据。
+  // 相比 IP 限制，它能区分同一 NAT（如校园宿舍）出口下的不同设备。
+  const DEVICE_ID_KEY = 'leg3sb_device_id';
+  function getDeviceId() {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) {
+      id = (crypto && crypto.randomUUID) ? crypto.randomUUID()
+        : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    return id;
+  }
 
   // --- 状态变量 ---
   // 计数器三池模型：confirmedTotal（服务端已确认）+ inFlight（已发送未返回）
@@ -302,19 +317,24 @@
     }
   }
 
+  let messageCooldown = false;
   async function sendMessage(message) {
       const trimmedMessage = message.trim();
-      if (!trimmedMessage) return;
+      if (!trimmedMessage || messageCooldown) return;
+      messageCooldown = true;
+      checkMessageInput();
       recentlySentMessages.add(trimmedMessage);
       setTimeout(() => recentlySentMessages.delete(trimmedMessage), 5000);
       createFlyingBarrage(trimmedMessage, 'user-sent');
       messageInput.value = '';
       checkMessageInput();
+      // 冷却结束后恢复发送按钮（输入框非空时）
+      setTimeout(() => { messageCooldown = false; checkMessageInput(); }, MESSAGE_COOLDOWN_MS);
       try {
           await fetch(MESSAGES_API_ENDPOINT, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ message: trimmedMessage })
+              body: JSON.stringify({ message: trimmedMessage, deviceId: getDeviceId() })
           });
       } catch (error) { console.error("Error sending message:", error); }
   }
@@ -337,7 +357,7 @@
       } catch (error) { console.error("Error fetching new messages:", error); }
   }
   
-  function checkMessageInput() { sendMessageBtn.disabled = messageInput.value.trim().length === 0; }
+  function checkMessageInput() { sendMessageBtn.disabled = messageCooldown || messageInput.value.trim().length === 0; }
   function handleInputKeydown(event) { if (event.key === 'Enter' && !sendMessageBtn.disabled) sendMessage(messageInput.value); }
 
   // --- 计数器相关函数 ---
@@ -396,17 +416,23 @@
       const response = await fetch(COUNTER_API_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ incrementBy: clicksToSend })
+        body: JSON.stringify({ incrementBy: clicksToSend, deviceId: getDeviceId() })
       });
-      const data = await response.json();
-      if (data && typeof data.total === 'number') {
-        // 服务端确认：confirmedTotal 跃升恰为 inFlight 的量，显示池总数不变
-        confirmedTotal = data.total;
-        inFlight = 0;
-      } else {
-        // 未确认，inFlight 退回待提交
+      if (response.status === 429) {
+        // 服务端按设备节流：本次提交被拒，待下一轮同步重试，点击不丢失
         localClickBuffer += inFlight;
         inFlight = 0;
+      } else {
+        const data = await response.json();
+        if (data && typeof data.total === 'number') {
+          // 服务端确认：confirmedTotal 跃升恰为 inFlight 的量，显示池总数不变
+          confirmedTotal = data.total;
+          inFlight = 0;
+        } else {
+          // 未确认，inFlight 退回待提交
+          localClickBuffer += inFlight;
+          inFlight = 0;
+        }
       }
     } catch (error) {
       console.error("Error syncing clicks:", error);

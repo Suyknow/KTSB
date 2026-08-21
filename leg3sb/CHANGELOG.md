@@ -10,8 +10,16 @@
 - 计数器新增指数趋近补间（`requestAnimationFrame` + `displayedValue += diff * 0.2`，约 250ms 到位），连点与他人点赞均平滑滚动上升；首次拿到服务端总数时直接落位、不补间。
 - 计数器样式新增 `font-variant-numeric: tabular-nums`，滚动时数字宽度不抖动。
 - 标签页隐藏时停止轮询、回到前台立即刷新并恢复轮询（`visibilitychange`），节省后台请求与数据库读。
+- 新增 `api/_lib/rateLimit.js`：按设备识别码节流的共享模块（`checkClickRateLimit` / `checkMessageRateLimit`），记录于 `rate_limits` 集合。
+- 新增设备识别码机制：前端在 `localStorage` 生成并持久化随机设备 ID，随点击 / 弹幕提交一并发送；以设备为节流粒度替代 IP，避免校园宿舍等 NAT 场景下多设备被误限。
+- 新增点击提交节流：服务端每台设备每秒最多一次点击同步，超频返回 `429`，客户端自动回退待下一轮重试、点击不丢失。
+- 新增弹幕提交节流：每台设备每秒最多一条弹幕，客户端冷却（`MESSAGE_COOLDOWN_MS`）与服务端校验双重限制。
+- `rate_limits` 集合新增 `lastSeen` 字段及 TTL 索引（1 天未活跃自动清理），避免设备识别码被频繁重生导致集合无限增长。
 
 ### Changed
+
+- `api/counter.js` 与 `api/messages.js` 在 POST 处理中读取 `deviceId` 并调用节流模块；缺设备 ID 返回 `400`、超频返回 `429`。
+- `public/index.html` 点击 / 弹幕 POST 请求体新增 `deviceId` 字段；弹幕发送新增客户端冷却，冷却期内发送按钮禁用。
 
 - `api/counter.js` 改用共享连接模块，移除重复连接样板、模块加载期 `throw` 与硬编码的 `"counter_db"`。
 - `api/messages.js` 改用共享连接模块；CORS 头交由 `vercel.json` 统一处理。
