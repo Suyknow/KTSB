@@ -370,7 +370,9 @@
     try {
       const response = await fetch(COUNTER_API_ENDPOINT);
       const data = await response.json();
-      if (data && typeof data.total === 'number') {
+      // GET 可能晚于 POST 返回（慢网络 / 冷启动），用陈旧值覆盖会令数字回退。
+      // 服务端总数单调递增，故仅在非冲突且 >= 当前已确认值时才更新。
+      if (data && typeof data.total === 'number' && !isSyncing && data.total >= confirmedTotal) {
         confirmedTotal = data.total;
         if (displayedValue === null) {
           // 首次拿到服务端总数，直接落位，不补间

@@ -9,10 +9,10 @@ async function ensureIndexes(collection) {
   if (indexesEnsured) return;
   try {
     await collection.createIndex({ timestamp: 1 });
+    indexesEnsured = true;
   } catch (error) {
     console.error('[API_MESSAGES_INDEX_ERROR]', error);
   }
-  indexesEnsured = true;
 }
 
 export default async (req, res) => {
@@ -32,7 +32,7 @@ export default async (req, res) => {
         return res.status(400).json({ success: false, error: 'Message content is required.' });
       }
 
-      const trimmedMessage = message.substring(0, MAX_MESSAGE_LENGTH).trim();
+      const trimmedMessage = [...message].slice(0, MAX_MESSAGE_LENGTH).join('').trim();
       if (!trimmedMessage) {
         return res.status(400).json({ success: false, error: 'Message content is required.' });
       }
