@@ -1,0 +1,8 @@
+# 开发与文档文件，无需上传到 Vercel 构建产物
+# （Vercel 只用 package.json / package-lock.json / vercel.json / api/ / public/，
+#  以下文件不被 /api 当函数、不被 /public 托管，排除仅用于精简上传）
+test/
+eslint.config.js
+coverage/
+*.md
+.DS_Store

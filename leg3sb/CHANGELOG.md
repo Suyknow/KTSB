@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-22
+
+### Fixed
+
+- 修复 iOS Safari 聚焦底部输入框时整页上移、露白底、输入条悬空 / 与键盘附件栏重叠的问题。根因是 iOS 平移的是 **visual viewport**（`offsetTop` 增大，且允许过冲与手指 pan），属 visual viewport 层，`overflow:hidden` / `position:fixed` 只锁 document scroll、管不到它。改为「反向平移抵消」：`visualViewport` 的 `resize`/`scroll` 事件里给 `body` 设 `transform: translateY(offsetTop)`——body 为 `fixed;inset:0` 等于 layout viewport，transform 后 fixed 后代改以 body 为包含块，内容经 `+offsetTop(transform) − offsetTop(VV 平移)` 抵消、视觉钉死，并扩展 body 绘制区覆盖过冲白带；输入条 `bottom = innerHeight − vv.height`（删去 `- vv.offsetTop` 与 `Math.max` 钳位）落在键盘上沿、与 offsetTop 解耦。键盘收起时 `offsetTop` 归 0、`vv.height` 恢复，transform / bottom 自然复位。安卓 Chrome `offsetTop` 恒为 0，transform 为空、行为不变、无退化。
+- 修复点击 `+1` 弹幕在键盘弹出时落点偏移（既有缺陷）：`clientY` 按 CSSOM View 规范是 layout-viewport 坐标（这正是 `visualViewport` API 被引入的原因——遗留坐标忽略 VV 偏移）。body 经 `translateY(offsetTop)` 反向平移后，弹幕作为 body 子节点其 `top` 即 screen 坐标，故改用 `clientY − offsetTop` 落在手指点按处；无键盘时 `offsetTop=0`、无副作用。
+
+### Added
+
+- 新增 `public/viewport.js`：纯函数 `computeViewportLayout(vv, innerHeight)`，把「反向平移抵消」的几何计算（`bodyTransformY = vv.offsetTop`、`inputBarBottom = innerHeight − vv.height`）从内联脚本抽出为 ESM，供前端与单测共用同一份几何契约。
+- 新增 `test/viewport.test.js`：基于 Node 内置 `node:test`（零依赖）的单测，覆盖无 visualViewport API、键盘未弹出、iOS VV 平移、iOS 过冲露白、安卓 layout 缩短、动画中间态、`vv.height` 异常大等场景，锁定「内容钉死 + 输入条贴键盘 + 不露白」的数学前提。
+- 新增 ESLint 9 flat config（`eslint.config.js`）与 `npm run lint` / `npm test` 脚本；lint 范围限定于本次新增的 ESM 文件（`public/**/*.js`、`test/**/*.js`），`index.html` 内联脚本与 `api/*.js` 暂未纳入以避免改动既有可用代码。
+- 新增 `.vercelignore`：把 `test/`、`eslint.config.js`、`*.md` 等开发与文档文件排除出 Vercel 部署产物（保留 `package.json` / `package-lock.json` / `vercel.json` / `api/` / `public/`），精简上传、避免 devDeps 干扰安装。
+
 ## 2026-08-21
 
 ### Added

@@ -188,7 +188,8 @@
     <button id="sendMessageBtn" disabled>发送</button>
   </div>
 
-<script>
+<script type="module">
+import { computeViewportLayout } from './viewport.js';
 (function(){
   // --- 计数器模块配置 ---
   const COUNTER_API_ENDPOINT = '/api/counter';
@@ -245,11 +246,16 @@
   function getVisibleHeight() {
     return window.visualViewport ? window.visualViewport.height : window.innerHeight;
   }
-  function syncInputBarToViewport() {
+  function syncViewport() {
     const vv = window.visualViewport;
-    if (!vv) return;
-    const keyboard = window.innerHeight - vv.height - vv.offsetTop;
-    messageArea.style.bottom = Math.max(0, keyboard) + 'px';
+    const { bodyTransformY, inputBarBottom } = computeViewportLayout(vv, window.innerHeight);
+    // 反向平移抵消 iOS visual viewport 的 offsetTop 平移：body 为 fixed;inset:0
+    // 等于 layout viewport，transform 后 fixed 后代改以 body 为包含块，内容
+    // 经 +offsetTop(transform) − offsetTop(VV 平移) 抵消，视觉钉死。offsetTop
+    // 为 0 时清除 transform，恢复原 CSS（无 containing-block 副作用、无合成层）。
+    document.body.style.transform = bodyTransformY ? `translateY(${bodyTransformY}px)` : '';
+    // 输入条钉在键盘上沿；公式已不含 offsetTop（由 transform 抵消）。
+    messageArea.style.bottom = inputBarBottom ? `${inputBarBottom}px` : '';
   }
 
   // --- 弹幕函数 ---
@@ -279,8 +285,13 @@
     el.textContent = text;
     el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
     const pad = 8, w = window.innerWidth, h = getVisibleHeight();
+    // clientY 按 CSSOM View 规范是 layout-viewport 坐标（这正是 visualViewport
+    // API 被引入的原因——遗留坐标忽略 VV 偏移）。本页 body 经 translateY(offsetTop)
+    // 反向平移后，弹幕作为 body 子节点其 top 即 screen 坐标，故需减 offsetTop
+    // 才落在手指点按处；无键盘时 offsetTop=0，无副作用。
+    const vvY = window.visualViewport ? window.visualViewport.offsetTop : 0;
     el.style.left = `${Math.max(pad, Math.min(w - pad - 100, x))}px`;
-    el.style.top  = `${Math.max(pad, Math.min(h - pad - 20, y))}px`;
+    el.style.top  = `${Math.max(pad, Math.min(h - pad - 20, y - vvY))}px`;
     el.style.transform = 'translateY(0) scale(1)';
     el.style.opacity = '1';
     document.body.appendChild(el);
@@ -505,11 +516,11 @@
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', syncInputBarToViewport);
-      window.visualViewport.addEventListener('scroll', syncInputBarToViewport);
+      window.visualViewport.addEventListener('resize', syncViewport);
+      window.visualViewport.addEventListener('scroll', syncViewport);
     }
-    window.addEventListener('resize', syncInputBarToViewport);
-    syncInputBarToViewport();
+    window.addEventListener('resize', syncViewport);
+    syncViewport();
 
     // 初始化弹幕（完成后置 initialBarrageReady，自动开启增量轮询）
     runInitialBarrageSequence();
