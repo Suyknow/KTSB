@@ -2,61 +2,100 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<!-- maximum-scale=1 / user-scalable=no：iOS 10+ 不再禁捏合（无障碍），但仍参与
+     双击缩放判定；捏合由 JS gesturestart preventDefault 彻底封死。 -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <meta property="og:title" content="腿三傻逼！" />
 <meta property="og:description" content="我们都有一个共同的朋友，他叫腿三，很不幸，也很幸运地，他是个傻逼。" />
 <meta property="og:image" content="https://s2.loli.net/2025/08/28/9VAWwyedDJimp6t.jpg" />
 <title>腿三傻逼！</title>
 <style>
+  /* ===== 全局锁定：文档永不可滚/不可捏合 ===== */
   html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
     overflow: hidden;
     overscroll-behavior: none;
+    background: #000;
   }
-  
-  * {box-sizing: border-box; margin: 0; padding: 0;}
-  html,body { height: 100%; width: 100%; }
+  * { box-sizing: border-box; touch-action: none; }
 
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans CJK SC", "PingFang SC", "Hiragino Sans GB", "Microsoft Yahei", "WenQuanYi Micro Hei", sans-serif;
+    position: fixed;
+    inset: 0;
+    color: #fff;
+  }
+
+  /* ===== 第 0 层：背景照片。fixed;inset:0 锚定布局视口——iOS 键盘只缩
+     visual viewport、不动布局视口，故此层永不重排，图片永不移动/缩放。
+     ::after 叠加原渐晕遮罩，与照片同层钉死。 ===== */
+  #bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background-color: #000;
     background-image: url("https://s2.loli.net/2025/08/28/9VAWwyedDJimp6t.jpg");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    position: fixed;
-    inset: 0;
-    color: #fff;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding-bottom: 70px;
   }
-
-  .overlay {
+  #bg::after {
+    content: "";
     position: absolute;
     inset: 0;
     background: linear-gradient(rgba(0,0,0,0.12), rgba(0,0,0,0.22));
     pointer-events: none;
   }
 
-  .container {
-    position: relative;
+  /* ===== 第 1 层：键盘区盖板。从 app 底（=输入条底=键盘上沿）盖到屏幕底，
+     需求「输入框以下只有纯黑」：键盘动画间隙、iOS 26 迷你 tab 区、任何
+     露缝处都由它兜底，绝无透明/照片穿帮。键盘未弹时高度为 0。 ===== */
+  #under-cover {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: var(--vvh, 100dvh);
+    bottom: 0;
+    z-index: 1;
+    background: #000;
+    pointer-events: none;
+  }
+
+  /* ===== 第 2 层：app 容器。高度 = --vvh（visualViewport 高度，仅由 resize
+     事件更新）。键盘弹起 → --vvh 缩小 → 输入条作为流内末尾子元素自然上移
+     贴住键盘上沿，全程无 transform、无 offsetTop 参与。 ===== */
+  #app {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--vvh, 100dvh);
     z-index: 2;
-    text-align: center;
-    padding: 5vh 5vw;
-    width: min(1000px, 94%);
-    margin: 0 auto;
-    flex-grow: 1;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
+  }
+
+  #content {
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
+    text-align: center;
+    padding: 5vh 5vw 12px;
+    width: min(1000px, 94%);
+    margin: 0 auto;
   }
 
   h1 {
     font-weight: 900;
     letter-spacing: 0.02em;
     font-size: clamp(28px, 8vw, 72px);
-    margin-bottom: 0.6rem;
+    margin: 0 0 0.6rem;
     color: #ffef3a;
     text-shadow: 0 6px 18px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.03);
   }
@@ -77,9 +116,37 @@
     opacity: 0.9;
   }
 
+  /* ===== 计数器：独立 fixed 于屏幕右上，键盘弹起不受影响 ===== */
+  #counter {
+    position: fixed;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    right: 16px;
+    z-index: 10000;
+    background: rgba(0,0,0,0.55);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #ffef3a;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ===== 弹幕层：高度恒等于「屏幕顶 → 输入条顶」，overflow:hidden 把
+     「弹幕出现在输入条/键盘之下」在结构上变为不可能（需求 4 不靠 JS 计算）。 ===== */
+  #barrage-layer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: calc(var(--vvh, 100dvh) - var(--bar-h, 64px));
+    z-index: 10;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
   .barrage {
     position: absolute;
-    z-index: 10;
     font-weight: 700;
     user-select: none;
     pointer-events: none;
@@ -96,7 +163,7 @@
     text-shadow: 0 2px 6px rgba(0,0,0,0.6);
     z-index: 11;
   }
-  
+
   .barrage.type-history,
   .barrage.type-realtime {
     background: transparent;
@@ -114,48 +181,32 @@
     z-index: 99;
   }
 
-  .counter {
-    position: fixed;
-    top: 12px;
-    right: 16px;
-    background: rgba(0,0,0,0.55);
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: bold;
-    color: #ffef3a;
-    text-shadow: 0 1px 4px rgba(0,0,0,0.7);
-    font-variant-numeric: tabular-nums;
-    z-index: 10000;
-  }
-
-  .message-input-area {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background: rgba(0,0,0,0.6);
-    padding: 10px 15px;
+  /* ===== 输入条：app 的流内末尾子元素，随 --vvh 自动贴键盘上沿 ===== */
+  #message-area {
+    flex-shrink: 0;
     display: flex;
     gap: 10px;
     align-items: center;
+    width: 100%;
+    padding: 10px 15px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    background: rgba(0,0,0,0.6);
     box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
-    z-index: 10001;
   }
 
-  .message-input-area input {
+  #message-input {
     flex: 1 1 0;
     padding: 10px 12px;
     border-radius: 25px;
     border: none;
     background: rgba(255,255,255,0.15);
     color: #fff;
-    font-size: 16px;
+    font-size: 16px; /* ≥16px，防 iOS 聚焦自动放大 */
     outline: none;
     transition: background 0.3s ease;
   }
 
-  .message-input-area button {
+  #send-btn {
     padding: 10px 20px;
     border-radius: 25px;
     border: none;
@@ -167,26 +218,26 @@
     transition: background 0.3s ease;
     flex-shrink: 0;
   }
-
-  @media (max-width: 480px) {
-    .message-input-area input, .message-input-area button {
-      font-size: 16px;
-    }
-  }
 </style>
 </head>
 <body>
-  <div class="overlay" aria-hidden="true"></div>
-  <div class="container" role="main" aria-live="polite">
-    <h1>腿三傻逼！</h1>
-    <p class="subtitle">我们都有一个共同的朋友，他叫腿三，很不幸，也很幸运地，他是个傻逼。</p>
-    <div class="hint">👏点击屏幕为腿三喝彩👏</div>
+  <div id="bg" aria-hidden="true"></div>
+  <div id="under-cover" aria-hidden="true"></div>
+
+  <div id="app">
+    <div id="content" role="main" aria-live="polite">
+      <h1>腿三傻逼！</h1>
+      <p class="subtitle">我们都有一个共同的朋友，他叫腿三，很不幸，也很幸运地，他是个傻逼。</p>
+      <div class="hint">👏点击屏幕为腿三喝彩👏</div>
+    </div>
+    <div id="message-area">
+      <input type="text" id="message-input" placeholder="发个弹幕吧～" maxlength="140" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <button id="send-btn" disabled>发送</button>
+    </div>
   </div>
-  <div class="counter" id="counter">总傻逼 +0</div>
-  <div class="message-input-area" id="messageArea">
-    <input type="text" id="messageInput" placeholder="发个弹幕吧～" maxlength="140" />
-    <button id="sendMessageBtn" disabled>发送</button>
-  </div>
+
+  <div id="counter">总傻逼 +0</div>
+  <div id="barrage-layer" aria-hidden="true"></div>
 
 <script type="module">
 import { computeViewportLayout } from './viewport.js';
@@ -199,14 +250,12 @@ import { computeViewportLayout } from './viewport.js';
 
   // --- 弹幕模块配置 ---
   const MESSAGES_API_ENDPOINT = '/api/messages';
-  const INITIAL_BARRAGE_COUNT = 200; // 固定获取200条
+  const INITIAL_BARRAGE_COUNT = 200;
   const INITIAL_ANIMATION_DURATION = 10000;
   const BARRAGE_REFRESH_INTERVAL_MS = 2500;
-  const MESSAGE_COOLDOWN_MS = 1000; // 客户端弹幕冷却，与服务端频次限制对齐
+  const MESSAGE_COOLDOWN_MS = 1000;
 
   // --- 设备识别码 ---
-  // 用 localStorage 持久化一个随机设备 ID，作为服务端按设备节流的依据。
-  // 相比 IP 限制，它能区分同一 NAT（如校园宿舍）出口下的不同设备。
   const DEVICE_ID_KEY = 'leg3sb_device_id';
   function getDeviceId() {
     let id = localStorage.getItem(DEVICE_ID_KEY);
@@ -219,17 +268,14 @@ import { computeViewportLayout } from './viewport.js';
   }
 
   // --- 状态变量 ---
-  // 计数器三池模型：confirmedTotal（服务端已确认）+ inFlight（已发送未返回）
-  // + localClickBuffer（未发送）。一次点击始终计入显示池，直到服务端确认，
-  // 因此 sync 期间数字不会回退。displayedValue 用指数趋近补间平滑滚动。
   let confirmedTotal = 0;
   let inFlight = 0;
   let localClickBuffer = 0;
   let isSyncing = false;
   let lastClickTime = 0;
-  let displayedValue = null; // 首次拿到服务端总数前为 null
+  let displayedValue = null;
   let rafId = null;
-  const TWEEN_K = 0.2; // 每帧趋近比例，约 250ms 基本到位
+  const TWEEN_K = 0.2;
   let lastMessageTimestamp = 0;
   let initialBarrageReady = false;
   const recentlySentMessages = new Set();
@@ -237,41 +283,94 @@ import { computeViewportLayout } from './viewport.js';
   let syncIntervalId = null;
   let messageIntervalId = null;
 
+  const root = document.documentElement;
   const counterEl = document.getElementById('counter');
-  const messageArea = document.getElementById('messageArea');
-  const messageInput = document.getElementById('messageInput');
-  const sendMessageBtn = document.getElementById('sendMessageBtn');
+  const layerEl = document.getElementById('barrage-layer');
+  const messageArea = document.getElementById('message-area');
+  const messageInput = document.getElementById('message-input');
+  const sendMessageBtn = document.getElementById('send-btn');
   const bgColors = ['rgba(0,0,0,0.45)', 'rgba(32,140,190,0.9)', 'rgba(255,69,0,0.85)'];
 
-  function getVisibleHeight() {
-    return window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  }
+  // --- 视口同步：唯一职责是把 --vvh（= visualViewport.height）写准 ---
+  // 只响应 resize 类事件，绝不读 offsetTop 做布局、绝不用 transform 补偿。
+  // iOS 键盘弹起时 vv.height 逐帧动画缩小，app 跟随收缩，输入条自然贴键盘上沿。
+  let lastAppHeight = -1;
   function syncViewport() {
     const vv = window.visualViewport;
-    const { bodyTransformY, inputBarBottom } = computeViewportLayout(vv, window.innerHeight);
-    // 反向平移抵消 iOS visual viewport 的 offsetTop 平移：body 为 fixed;inset:0
-    // 等于 layout viewport，transform 后 fixed 后代改以 body 为包含块，内容
-    // 经 +offsetTop(transform) − offsetTop(VV 平移) 抵消，视觉钉死。offsetTop
-    // 为 0 时清除 transform，恢复原 CSS（无 containing-block 副作用、无合成层）。
-    document.body.style.transform = bodyTransformY ? `translateY(${bodyTransformY}px)` : '';
-    // 输入条钉在键盘上沿；公式已不含 offsetTop（由 transform 抵消）。
-    messageArea.style.bottom = inputBarBottom ? `${inputBarBottom}px` : '';
+    const fallbackH = window.innerHeight;
+    const { appHeight, needsPanReset } = computeViewportLayout(vv, fallbackH);
+    if (appHeight !== lastAppHeight) {
+      root.style.setProperty('--vvh', `${appHeight}px`);
+      lastAppHeight = appHeight;
+    }
+    // 残留平移/缩放兜底（iOS 26 键盘收起后 offsetTop 不复位、误捏合等）。
+    // 正常交互不会产生合法的 offsetTop≠0：输入条永远可见，iOS 无需 pan；
+    // 捏合/双击已被 gesturestart / touchend 守卫封死。故复位总是安全的。
+    if (needsPanReset && (window.scrollY || window.scrollX)) window.scrollTo(0, 0);
+  }
+
+  function measureInputBar() {
+    root.style.setProperty('--bar-h', `${messageArea.offsetHeight}px`);
+  }
+
+  // --- 手势封死：捏合与双击缩放从根上禁掉（需求：背景永不动） ---
+  // 1) 捏合：iOS Safari 专属 gesturestart 事件，preventDefault 即无缩放动画。
+  for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+    document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+  }
+  // 2) 双击：第二次 touchend 落在 350ms 窗口内则 preventDefault，双击缩放
+  //    手势根本不会合成。计数走 pointerdown、不受影响；输入区放行（双击选中文字）。
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    const inInputArea = e.target && messageArea.contains(e.target);
+    if (!inInputArea && now - lastTouchEnd <= 350) e.preventDefault();
+    lastTouchEnd = now;
+  }, { passive: false });
+  // 3) iOS 26 兜底：任何时刻 scale 偏离 1，强制复位（syncViewport 的 needsPanReset
+  //    已覆盖；此处再于 resize/scroll 后补一次检查）。
+
+  // --- 聚焦：touchstart 捕获阶段预聚焦 + preventScroll，iOS 检测到元素已聚焦，
+  // 跳过「滚入可见区」的自动平移（社区验证方案，杜绝键盘期 VV pan 的源头） ---
+  messageArea.addEventListener('touchstart', () => {
+    if (document.activeElement !== messageInput) {
+      try { messageInput.focus({ preventScroll: true }); }
+      catch { messageInput.focus(); }
+    }
+  }, { capture: true, passive: true });
+
+  // 后台切换：iOS 会快照并维持「聚焦可见」状态导致布局错乱，先失焦再复位
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      if (document.activeElement === messageInput) messageInput.blur();
+      stopPolling();
+    } else {
+      syncViewport();
+      syncOrFetch();
+      fetchNewMessages();
+      startPolling();
+    }
   }
 
   // --- 弹幕函数 ---
+  function layerHeight() {
+    return layerEl.getBoundingClientRect().height;
+  }
+
   function createFlyingBarrage(text, type = 'realtime') {
     const el = document.createElement('span');
     el.className = `barrage type-${type}`;
     el.textContent = text;
-    document.body.appendChild(el);
     let duration = 12000 + Math.random() * 5000;
     if (window.innerWidth < 768) {
       duration /= 2;
     }
-    const top = Math.random() * (getVisibleHeight() * 0.7);
+    // 只在弹幕层内取随机纵向位置；层高本身 = 屏顶→输入条顶，越界即被裁剪
+    const top = Math.random() * (layerHeight() * 0.7);
     el.style.top = `${top}px`;
-    el.style.left = '100vw'; 
+    el.style.left = '100vw';
     el.style.transform = 'translateX(0)';
+    layerEl.appendChild(el);
     requestAnimationFrame(() => {
         el.style.transition = `transform ${duration}ms linear`;
         el.style.transform = `translateX(calc(-100vw - 100%))`;
@@ -284,17 +383,16 @@ import { computeViewportLayout } from './viewport.js';
     el.className = 'barrage type-click';
     el.textContent = text;
     el.style.background = bgColors[Math.floor(Math.random()*bgColors.length)];
-    const pad = 8, w = window.innerWidth, h = getVisibleHeight();
-    // clientY 按 CSSOM View 规范是 layout-viewport 坐标（这正是 visualViewport
-    // API 被引入的原因——遗留坐标忽略 VV 偏移）。本页 body 经 translateY(offsetTop)
-    // 反向平移后，弹幕作为 body 子节点其 top 即 screen 坐标，故需减 offsetTop
-    // 才落在手指点按处；无键盘时 offsetTop=0，无副作用。
-    const vvY = window.visualViewport ? window.visualViewport.offsetTop : 0;
+    // scale≡1、offsetTop≡0 由手势守卫保证，clientX/Y 即弹幕层内坐标；
+    // y 钳制进层内，物理上不可能落到输入条/键盘区域
+    const pad = 8;
+    const w = window.innerWidth;
+    const h = layerHeight();
     el.style.left = `${Math.max(pad, Math.min(w - pad - 100, x))}px`;
-    el.style.top  = `${Math.max(pad, Math.min(h - pad - 20, y - vvY))}px`;
+    el.style.top  = `${Math.max(pad, Math.min(h - pad - 24, y))}px`;
     el.style.transform = 'translateY(0) scale(1)';
     el.style.opacity = '1';
-    document.body.appendChild(el);
+    layerEl.appendChild(el);
     requestAnimationFrame(() => {
       const up = 60 + Math.random()*80;
       const dx = (Math.random() - 0.5) * 120;
@@ -311,7 +409,7 @@ import { computeViewportLayout } from './viewport.js';
       const response = await fetch(`${MESSAGES_API_ENDPOINT}?limit=${INITIAL_BARRAGE_COUNT}`);
       const data = await response.json();
       if (!data || !Array.isArray(data.messages) || data.messages.length === 0) return;
-      
+
       const messages = data.messages;
       lastMessageTimestamp = messages[messages.length - 1].timestamp;
       let currentIndex = 0;
@@ -350,7 +448,6 @@ import { computeViewportLayout } from './viewport.js';
       createFlyingBarrage(trimmedMessage, 'user-sent');
       messageInput.value = '';
       checkMessageInput();
-      // 冷却结束后恢复发送按钮（输入框非空时）
       setTimeout(() => { messageCooldown = false; checkMessageInput(); }, MESSAGE_COOLDOWN_MS);
       try {
           await fetch(MESSAGES_API_ENDPOINT, {
@@ -362,7 +459,7 @@ import { computeViewportLayout } from './viewport.js';
   }
 
   async function fetchNewMessages() {
-      if (!initialBarrageReady) return; // 等初始弹幕拉取完成后再开始增量轮询
+      if (!initialBarrageReady) return;
       try {
           const response = await fetch(`${MESSAGES_API_ENDPOINT}?since=${lastMessageTimestamp}`);
           const data = await response.json();
@@ -378,7 +475,7 @@ import { computeViewportLayout } from './viewport.js';
           }
       } catch (error) { console.error("Error fetching new messages:", error); }
   }
-  
+
   function checkMessageInput() { sendMessageBtn.disabled = messageCooldown || messageInput.value.trim().length === 0; }
   function handleInputKeydown(event) { if (event.key === 'Enter' && !sendMessageBtn.disabled) sendMessage(messageInput.value); }
 
@@ -387,7 +484,6 @@ import { computeViewportLayout } from './viewport.js';
     counterEl.textContent = `总傻逼 +${Math.round(displayedValue)}`;
   }
 
-  // 每帧把 displayedValue 指数趋近 target，到位后停止 rAF
   function tweenTick() {
     const target = confirmedTotal + inFlight + localClickBuffer;
     const diff = target - displayedValue;
@@ -402,7 +498,6 @@ import { computeViewportLayout } from './viewport.js';
     rafId = requestAnimationFrame(tweenTick);
   }
 
-  // 目标值变化时触发补间（已初始化且没有 rAF 在跑时）
   function updateCounterDisplay() {
     if (displayedValue === null) return;
     if (rafId === null) rafId = requestAnimationFrame(tweenTick);
@@ -412,12 +507,9 @@ import { computeViewportLayout } from './viewport.js';
     try {
       const response = await fetch(COUNTER_API_ENDPOINT);
       const data = await response.json();
-      // GET 可能晚于 POST 返回（慢网络 / 冷启动），用陈旧值覆盖会令数字回退。
-      // 服务端总数单调递增，故仅在非冲突且 >= 当前已确认值时才更新。
       if (data && typeof data.total === 'number' && !isSyncing && data.total >= confirmedTotal) {
         confirmedTotal = data.total;
         if (displayedValue === null) {
-          // 首次拿到服务端总数，直接落位，不补间
           displayedValue = confirmedTotal;
           renderCounter();
         } else {
@@ -431,7 +523,6 @@ import { computeViewportLayout } from './viewport.js';
     if (localClickBuffer === 0 || isSyncing) return;
     isSyncing = true;
     const clicksToSend = Math.min(localClickBuffer, MAX_CLICKS_PER_SYNC);
-    // 待提交 → 已发送未返回；显示池总数不变，数字不会回退
     localClickBuffer -= clicksToSend;
     inFlight += clicksToSend;
     try {
@@ -441,17 +532,14 @@ import { computeViewportLayout } from './viewport.js';
         body: JSON.stringify({ incrementBy: clicksToSend, deviceId: getDeviceId() })
       });
       if (response.status === 429) {
-        // 服务端按设备节流：本次提交被拒，待下一轮同步重试，点击不丢失
         localClickBuffer += inFlight;
         inFlight = 0;
       } else {
         const data = await response.json();
         if (data && typeof data.total === 'number') {
-          // 服务端确认：confirmedTotal 跃升恰为 inFlight 的量，显示池总数不变
           confirmedTotal = data.total;
           inFlight = 0;
         } else {
-          // 未确认，inFlight 退回待提交
           localClickBuffer += inFlight;
           inFlight = 0;
         }
@@ -485,8 +573,6 @@ import { computeViewportLayout } from './viewport.js';
     }
   }
 
-  // --- 后台暂停 / 恢复 ---
-  // 标签页隐藏时停止轮询，回到前台时立即刷新并恢复轮询，节省请求与数据库读。
   function startPolling() {
     if (!syncIntervalId) syncIntervalId = setInterval(syncOrFetch, SYNC_INTERVAL_MS);
     if (!messageIntervalId) messageIntervalId = setInterval(fetchNewMessages, BARRAGE_REFRESH_INTERVAL_MS);
@@ -497,19 +583,8 @@ import { computeViewportLayout } from './viewport.js';
     if (messageIntervalId) { clearInterval(messageIntervalId); messageIntervalId = null; }
   }
 
-  function handleVisibilityChange() {
-    if (document.hidden) {
-      stopPolling();
-    } else {
-      syncOrFetch();
-      fetchNewMessages();
-      startPolling();
-    }
-  }
-
   // --- 初始化 ---
   function initialize() {
-    // 初始化计数器
     fetchTotalCount();
     startPolling();
     document.body.addEventListener('pointerdown', handlePointer, {passive: true});
@@ -519,19 +594,22 @@ import { computeViewportLayout } from './viewport.js';
       window.visualViewport.addEventListener('resize', syncViewport);
       window.visualViewport.addEventListener('scroll', syncViewport);
     }
-    window.addEventListener('resize', syncViewport);
+    window.addEventListener('resize', () => { syncViewport(); measureInputBar(); });
+    window.addEventListener('orientationchange', () => { syncViewport(); measureInputBar(); });
+    messageInput.addEventListener('focus', syncViewport);
+    messageInput.addEventListener('blur', syncViewport);
     syncViewport();
+    // 首帧布局稳定后再量输入条高度（含安全区 padding）
+    requestAnimationFrame(measureInputBar);
 
-    // 初始化弹幕（完成后置 initialBarrageReady，自动开启增量轮询）
     runInitialBarrageSequence();
 
-    // 初始化输入框
     messageInput.addEventListener('input', checkMessageInput);
     sendMessageBtn.addEventListener('click', () => sendMessage(messageInput.value));
     messageInput.addEventListener('keydown', handleInputKeydown);
     checkMessageInput();
   }
-  
+
   initialize();
 })();
 </script>

@@ -1,30 +1,33 @@
 // Visual-viewport layout helper.
 //
-// iOS Safari 平移的是 visual viewport（offsetTop 增大，可过冲），属于 visual
-// viewport 层，overflow:hidden / position:fixed 只锁 document scroll、管不到它。
-// 解法不是阻止平移，而是给 body 反向平移抵消：body 设 position:fixed;inset:0
-// 等于 layout viewport，translateY(offsetTop) 后 fixed 后代改以 body 为包含块，
-// 内容坐标经“+offsetTop(transform) − offsetTop(VV 平移)”抵消，视觉钉死；输入条
-// bottom = innerHeight − vv.height 落在键盘上沿，与 offsetTop 无关。
+// 架构（2026-08 重构）：放弃一切 transform / offsetTop 追逐方案（MDN device-fixed
+// 示例自述会闪烁；iOS 26 另有 offsetTop 不复位的已知回归）。改为「resize 驱动」：
+// 前端只在 vv.resize 时调用本函数，把返回的 appHeight 写入 <html> 的 --vvh 变量，
+// app 容器高度随之缩放，输入条作为流内子元素自然贴到键盘上沿。
 //
-// 此函数为纯函数，便于离线单元测试；前端与测试共用同一份几何契约。
+// 本函数是纯函数，便于离线单测；前端与测试共用同一份几何契约。
 
 /**
- * @param {{ height?: number, offsetTop?: number } | null | undefined} vv
- *        window.visualViewport 的快照（仅需 height 与 offsetTop）。
- * @param {number} innerHeight window.innerHeight（layout viewport 高度）。
- * @returns {{ bodyTransformY: number, inputBarBottom: number }}
- *          bodyTransformY：反向平移量（px），0 表示无需平移；inputBarBottom：
- *          输入条 bottom 值（px）。
+ * @param {{ height?: number, offsetTop?: number, scale?: number } | null | undefined} vv
+ *        window.visualViewport 的快照。
+ * @param {number} fallbackHeight 无 vv API 时的回退高度（window.innerHeight）。
+ * @returns {{ appHeight: number, needsPanReset: boolean }}
+ *          appHeight：app 容器应有的高度（px，取整）；needsPanReset：检测到
+ *          残留的 VV 平移/缩放（offsetTop>0 或 scale≠1）时应做 scrollTo 复位。
+ *          正常态两者都来自 vv；异常输入回退到 fallbackHeight 且不复位。
  */
-export function computeViewportLayout(vv, innerHeight) {
-  if (!vv || typeof vv.height !== 'number' || typeof vv.offsetTop !== 'number') {
-    return { bodyTransformY: 0, inputBarBottom: 0 };
+export function computeViewportLayout(vv, fallbackHeight) {
+  const fb = Number.isFinite(fallbackHeight) ? Math.max(0, Math.round(fallbackHeight)) : 0;
+  if (!vv
+    || typeof vv.height !== 'number'
+    || typeof vv.offsetTop !== 'number'
+    || typeof fallbackHeight !== 'number'
+    || !Number.isFinite(vv.height)) {
+    return { appHeight: fb, needsPanReset: false };
   }
-  const bodyTransformY = vv.offsetTop;
-  // 输入条落在 visual viewport 底部（键盘上沿）。不要减 offsetTop 也不要依赖
-  // max 钳位——offsetTop 已由 body 的 transform 抵消；max 仅防 vv.height 异常
-  // 大于 innerHeight（缩放小于 1 时）产生负值。
-  const inputBarBottom = Math.max(0, innerHeight - vv.height);
-  return { bodyTransformY, inputBarBottom };
+  return {
+    appHeight: Math.max(0, Math.round(vv.height)),
+    needsPanReset: vv.offsetTop > 0.5
+      || (typeof vv.scale === 'number' && Math.abs(vv.scale - 1) > 0.001),
+  };
 }

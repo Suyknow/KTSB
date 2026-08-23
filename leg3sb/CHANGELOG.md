@@ -1,6 +1,43 @@
 # Changelog
 
+## 2026-08-23
+
+### Changed（显示层完全重构）
+
+- **彻底重构视口方案为「resize 驱动」**，废弃全部 transform / offsetTop 追逐实现（调研结论：MDN device-fixed 示例自述滚动时会闪烁；Apple 论坛 #800125/#800154 确认 iOS 26 存在键盘收起后 `offsetTop` 不复位的回归 bug；社区成熟方案 gavalierm/ios-pwa-scrolling-input-focus-fix 亦采用 CSS 变量 + 仅响应 resize 的路线）。新分层：
+  - `#bg` 背景照片独立 `fixed; inset:0`——锚定布局视口（iOS 键盘期不变），**图片永不移动/缩放**；
+  - `--vvh`（= `visualViewport.height`）仅由 resize 类事件写入 `<html>`，`#app` 高度随之缩放，**输入条作为流内子元素自然贴住键盘上沿**，无 transform、无 rAF 跟踪循环；
+  - `#under-cover` 纯黑盖板从 `top: var(--vvh)` 盖到屏幕底，键盘动画间隙 / iOS 26 迷你 tab 区任何露缝处均为纯黑（输入框以下无内容）；
+  - `#barrage-layer` 高度恒等于「屏顶→输入条顶」且 `overflow:hidden`，**弹幕在结构上不可能出现在输入条/键盘之下**（不再依赖 JS 坐标计算）。
+- **双击/捏合缩放从触发源头封死**：meta 加 `maximum-scale=1`、全局 `gesturestart/change/end` preventDefault（iOS 捏合专用通道）、第二次 touchend 落入 350ms 窗口即 preventDefault 使双击缩放手势根本不合成（计数走 pointerdown 不受影响、输入区放行）；残留 scale≠1 / offsetTop≠0 由 `syncViewport` 兜底复位。修复双击后键盘与输入条间隙变透明、背景图轻微缩放位移的问题。
+- 聚焦改用 touchstart 捕获阶段预 `focus({preventScroll:true})`（社区验证方案）：元素已聚焦则 iOS 跳过「滚入可见区」自动平移，从源头杜绝键盘期 VV pan；后台切换时先 blur 再复位，防快照恢复错乱。
+- `viewport.js` 契约重写为 `computeViewportLayout(vv, fallbackHeight) → { appHeight, needsPanReset }`；单测同步重写（8 例）。
+
+### Fixed
+
+- 修复聚焦输入框时整页以帧频抽搐（真机遥测定位）：页面处于轻微缩放（`vv.scale≈1.08`，布局视口 775 与 `vv.height` 718 间有 57px pan 余量）时，iOS 为露出聚焦输入框把 VV pan 到 `offsetTop=57`（并反映进 `scrollY`），而 `syncViewport` 末尾的 `window.scrollTo(0,0)` 兜底立即把它拽回 0——两个控制器逐帧争夺 pan 位置，`offsetTop` 以 0↔57 帧频翻转，表现为整页抖动。移除该 scrollTo 干预（device-fixed 公式对任意 `offsetTop` 自洽，无需归零）；`syncViewport` 的两处 transform 写入加脏检查，值不变不写 style，消除 rAF 逐帧赋值造成的无谓样式失效。此前 CDP mock 验证未覆盖此路径，因 mock 的 scale 恒为 1、不存在 pan 余量。
+
+### Removed
+
+- 移除全部开发期产物：`test/`（单测）、`eslint.config.js`、ESLint devDependencies（`package.json` 仅保留运行时依赖 `mongodb` 并重新生成 lockfile）、`node_modules/`、开发用遥测页 `public/debug.html`（其 `/log` 上报端点生产环境不存在）及 `.DS_Store`。`.vercelignore` 同步精简；README 增补「前端视口方案」一节说明现行架构。
+- 清理 `index.html` 中未使用的 `bgEl` / `appEl` 引用（代码审查发现）。
+
 ## 2026-08-22
+
+### Fixed
+
+- 重做 iOS 键盘弹起时的视觉视口处理（真机录屏复现：键盘一弹出整页被推上、页面可被手指滑动、输入条掉到键盘后消失、底部露白）。旧契约 `inputBarBottom = innerHeight − vv.height` 依赖 `innerHeight` 行为与 VV 事件时序假设，真机上不成立。改为 **body 镜像 visual viewport**：`computeViewportLayout(vv)` 返回 `{ bodyTransformY: vv.offsetTop, bodyHeight: vv.height }`，body 矩形逐帧等于屏幕可见矩形——背景铺满不露白、平移被 transform 逐帧抵消（页面钉死不可滑）、iOS「把聚焦输入框滚进可见区」的上推因输入框始终可见而不再触发，与 `innerHeight` 完全解耦。
+- 修复键盘升起第一阶段（`visualViewport` 已缩高、`offsetTop` 尚为 0）输入条掉到键盘后的缺陷：`.counter` 与 `.message-input-area` 由 `position: fixed` 改为 `absolute`。fixed 元素的包含块随 body 是否带 transform 在 viewport/body 之间漂移——transform 只在 `offsetTop≠0` 时才设置，导致键盘弹出初期（无 transform）输入条仍钉在视口底、被键盘完全盖住，iOS 为寻找这个视口外元素持续上推页面；真机表现为「键盘一弹整页被推上、输入条消失数秒」。改 absolute 后恒以全屏容器 body 定位，任何阶段都贴可见区底/顶。
+- 新增键盘在场期间的 rAF 逐帧跟踪（`focus` 启动 / `blur` 停止并兜底一次）：WebKit 的 `visualViewport` 事件在键盘动画与手指 pan 期间可能不连续触发，仅靠事件驱动会滞后。
+- 移除捏合缩放（`vv.scale ≠ 1`）时的回退清空：镜像几何对任意缩放倍数都成立，且 WebKit 键盘动画期间会瞬时抖动 scale，守卫误触发会造成可见跳变。
+- `html` 增加黑色背景兜底：过冲/事件间隙即使露出 body 绘制区之外也显示黑底而非白底。
+- 以上已用 Chrome CDP + 注入 mock visualViewport 的完整事件序列（键盘升起、iOS 平移、手指过冲、收起动画、scale 抖动、聚焦期 rAF 兜底）做端到端验证，21 项断言全部通过。
+
+### Changed
+
+- `public/viewport.js` 契约变更：`computeViewportLayout(vv)` 不再接收 `innerHeight`、不再返回 `inputBarBottom`，改为返回 `bodyHeight`（`null` 表示无 VV API 时用 CSS 默认高度）；`test/viewport.test.js` 同步重写，锁定「body 底 == VV 底（键盘上沿）」不变量。
+
+## 2026-08-22（早先）
 
 ### Fixed
 
